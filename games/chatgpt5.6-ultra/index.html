@@ -1,0 +1,2455 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#78bce8" />
+    <title>Voxel Frontier</title>
+    <style>
+:root {
+  color-scheme: dark;
+  --ink: #f7f2df;
+  --muted: #b9c4c6;
+  --panel: rgba(8, 14, 17, 0.9);
+  --line: rgba(255, 255, 255, 0.14);
+  --lime: #b8e55b;
+  --lime-dark: #5f8e29;
+  --shadow: rgba(0, 0, 0, 0.4);
+  --slot: rgba(8, 13, 14, 0.78);
+  font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #76b9e6;
+}
+
+body {
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+button {
+  font: inherit;
+}
+
+#game-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 320px;
+  min-height: 420px;
+  overflow: hidden;
+  isolation: isolate;
+  background:
+    linear-gradient(to bottom, #5ba9df 0%, #8ccbee 52%, #e6f0d0 100%);
+}
+
+#game-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  cursor: default;
+  background:
+    linear-gradient(to bottom, #5ba9df 0%, #8ccbee 55%, #dce9c6 100%);
+}
+
+body.playing #game-canvas {
+  cursor: none;
+}
+
+#vignette,
+#water-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#vignette {
+  background:
+    radial-gradient(circle at center, transparent 48%, rgba(5, 10, 12, 0.16) 100%),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.04), transparent 18%, transparent 82%, rgba(0, 0, 0, 0.08));
+  mix-blend-mode: multiply;
+}
+
+#water-tint {
+  z-index: 3;
+  opacity: 0;
+  background: rgba(26, 127, 174, 0.26);
+  box-shadow: inset 0 0 120px rgba(8, 72, 116, 0.45);
+  transition: opacity 180ms ease;
+}
+
+body.underwater #water-tint {
+  opacity: 1;
+}
+
+.screen-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 220ms ease, visibility 220ms ease;
+}
+
+.screen-layer.visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+#loading-screen {
+  z-index: 30;
+  background:
+    linear-gradient(rgba(4, 9, 10, 0.76), rgba(4, 9, 10, 0.88)),
+    repeating-linear-gradient(45deg, #27381c 0 22px, #314522 22px 44px);
+}
+
+.loading-brand {
+  width: min(500px, 84vw);
+  text-align: center;
+}
+
+.logo-cube {
+  position: relative;
+  width: 72px;
+  height: 82px;
+  margin: 0 auto 28px;
+  filter: drop-shadow(0 16px 16px rgba(0, 0, 0, 0.32));
+}
+
+.logo-cube span {
+  position: absolute;
+  display: block;
+}
+
+.cube-top {
+  top: 0;
+  left: 9px;
+  width: 54px;
+  height: 34px;
+  background: #98d84d;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.cube-left {
+  top: 26px;
+  left: 9px;
+  width: 27px;
+  height: 48px;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.1), transparent),
+    #795537;
+  clip-path: polygon(0 0, 100% 15%, 100% 100%, 0 84%);
+}
+
+.cube-right {
+  top: 26px;
+  right: 9px;
+  width: 27px;
+  height: 48px;
+  background:
+    linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.16)),
+    #68452e;
+  clip-path: polygon(0 15%, 100% 0, 100% 84%, 0 100%);
+}
+
+.eyebrow {
+  margin: 0 0 9px;
+  color: var(--lime);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.25em;
+}
+
+.loading-brand h1 {
+  margin: 0 0 32px;
+  font-size: clamp(30px, 5vw, 52px);
+  line-height: 0.92;
+  letter-spacing: -0.055em;
+  text-shadow: 0 4px 0 rgba(0, 0, 0, 0.28);
+}
+
+.loading-track {
+  height: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.78);
+  padding: 1px;
+  background: rgba(0, 0, 0, 0.36);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.24);
+}
+
+#loading-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--lime);
+  transition: width 120ms linear;
+}
+
+#loading-label {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#menu-screen {
+  background:
+    linear-gradient(90deg, rgba(3, 8, 10, 0.84) 0%, rgba(3, 8, 10, 0.62) 48%, rgba(3, 8, 10, 0.2) 100%),
+    radial-gradient(circle at 75% 35%, transparent, rgba(3, 8, 10, 0.2));
+  backdrop-filter: blur(3px);
+}
+
+.menu-card {
+  width: min(1020px, 92vw);
+  display: grid;
+  grid-template-columns: minmax(0, 1.12fr) minmax(290px, 0.88fr);
+  gap: clamp(36px, 7vw, 92px);
+  align-items: center;
+}
+
+.menu-copy h1 {
+  margin: 0;
+  font-family: Impact, "Arial Black", sans-serif;
+  font-size: clamp(64px, 10vw, 126px);
+  font-weight: 900;
+  line-height: 0.75;
+  letter-spacing: -0.045em;
+  text-shadow: 0 7px 0 rgba(0, 0, 0, 0.32);
+}
+
+.menu-copy h1 span {
+  color: var(--lime);
+}
+
+.menu-lead {
+  max-width: 530px;
+  margin: 34px 0 0;
+  color: #d6ddda;
+  font-size: clamp(14px, 1.6vw, 17px);
+  line-height: 1.65;
+}
+
+.menu-actions {
+  padding: 25px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 12px 12px 0 rgba(0, 0, 0, 0.24);
+}
+
+.primary-button {
+  width: 100%;
+  min-height: 61px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px 0 23px;
+  border: 0;
+  border-bottom: 5px solid var(--lime-dark);
+  color: #15200e;
+  background: var(--lime);
+  font-size: 14px;
+  font-weight: 1000;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 100ms ease, filter 100ms ease;
+}
+
+.primary-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-2px);
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(2px);
+  border-bottom-width: 3px;
+}
+
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.button-arrow {
+  font-size: 23px;
+  line-height: 1;
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 16px;
+  margin: 25px 0;
+}
+
+.control-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 10px;
+  align-items: center;
+  color: #c3ccca;
+  font-size: 11px;
+}
+
+.key,
+.mouse-key {
+  height: 28px;
+  min-width: 28px;
+  display: inline-grid;
+  place-items: center;
+  justify-self: start;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-bottom-width: 3px;
+  border-radius: 3px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.key.wide {
+  width: 46px;
+}
+
+.mouse-key {
+  position: relative;
+  width: 20px;
+  min-width: 20px;
+  height: 29px;
+  margin-left: 6px;
+  border-radius: 9px 9px 7px 7px;
+}
+
+.mouse-key::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  width: 9px;
+  height: 11px;
+  background: rgba(184, 229, 91, 0.5);
+}
+
+.left-click::before {
+  left: -1px;
+  border-radius: 9px 0 2px 0;
+}
+
+.right-click::before {
+  right: -1px;
+  border-radius: 0 9px 0 2px;
+}
+
+.menu-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 17px;
+  border-top: 1px solid var(--line);
+  color: #84908f;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+
+.text-button {
+  border: 0;
+  padding: 5px 0;
+  color: #c8d0cd;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.text-button:hover {
+  color: var(--lime);
+}
+
+.desktop-note {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-align: center;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#hud {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+body.game-ready #hud {
+  visibility: visible;
+}
+
+body.playing #hud {
+  opacity: 1;
+}
+
+.top-hud {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.brand-chip,
+.debug-chip {
+  min-height: 29px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 13, 14, 0.62);
+  text-shadow: 0 1px 2px #000;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.debug-chip {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.mini-cube {
+  width: 10px;
+  height: 10px;
+  background: var(--lime);
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.23);
+}
+
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(1px 1px 0 rgba(0, 0, 0, 0.8));
+  transition: transform 80ms ease;
+}
+
+#crosshair span {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  background: rgba(255, 255, 255, 0.96);
+  transform: translate(-50%, -50%);
+}
+
+#crosshair span:first-child {
+  width: 18px;
+  height: 2px;
+}
+
+#crosshair span:last-child {
+  width: 2px;
+  height: 18px;
+}
+
+#crosshair.pulse {
+  transform: translate(-50%, -50%) scale(1.35) rotate(45deg);
+}
+
+#action-toast {
+  position: absolute;
+  top: calc(50% + 29px);
+  left: 50%;
+  min-height: 20px;
+  padding: 4px 8px;
+  transform: translateX(-50%) translateY(5px);
+  opacity: 0;
+  color: #fff;
+  background: rgba(7, 12, 13, 0.56);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transition: opacity 130ms ease, transform 130ms ease;
+}
+
+#action-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.bottom-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+#block-name {
+  margin-bottom: 9px;
+  padding: 5px 10px;
+  color: #fff;
+  background: rgba(8, 13, 14, 0.64);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 1px #000;
+}
+
+#hotbar {
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(7, 12, 13, 0.68);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.18);
+}
+
+.hotbar-slot {
+  position: relative;
+  width: clamp(42px, 5vw, 53px);
+  height: clamp(42px, 5vw, 53px);
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.13);
+  background: var(--slot);
+  transition: border-color 90ms ease, transform 90ms ease, background 90ms ease;
+}
+
+.hotbar-slot.selected {
+  border-color: #fff;
+  background: rgba(184, 229, 91, 0.16);
+  transform: translateY(-4px);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45), 0 5px 0 rgba(0, 0, 0, 0.16);
+}
+
+.slot-number {
+  position: absolute;
+  top: 3px;
+  left: 5px;
+  color: rgba(255, 255, 255, 0.62);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.slot-block {
+  width: 25px;
+  height: 25px;
+  background: var(--block-color, #999);
+  box-shadow:
+    inset -7px -7px 0 var(--block-shadow, rgba(0, 0, 0, 0.2)),
+    inset 4px 4px 0 rgba(255, 255, 255, 0.12),
+    3px 4px 0 rgba(0, 0, 0, 0.28);
+  image-rendering: pixelated;
+  transform: rotate(2deg);
+}
+
+.hud-hint {
+  margin: 9px 0 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-family: ui-monospace, "Cascadia Mono", monospace;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-shadow: 0 1px 2px #000;
+}
+
+.hud-hint span {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+#held-block {
+  --held-main: #6ca832;
+  --held-light: #9ed457;
+  --held-dark: #4b7524;
+  position: absolute;
+  right: clamp(40px, 7vw, 110px);
+  bottom: clamp(76px, 10vw, 118px);
+  width: 118px;
+  height: 126px;
+  transform: rotate(-12deg) translateY(0);
+  transform-origin: 70% 100%;
+  filter: drop-shadow(10px 18px 12px rgba(0, 0, 0, 0.2));
+  transition: transform 100ms ease;
+}
+
+#held-block.swing {
+  transform: rotate(-38deg) translate(-30px, -22px) scale(0.9);
+}
+
+#held-block span {
+  position: absolute;
+  display: block;
+}
+
+.held-top {
+  top: 6px;
+  left: 17px;
+  width: 86px;
+  height: 53px;
+  background: var(--held-light);
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+
+.held-left {
+  top: 47px;
+  left: 17px;
+  width: 43px;
+  height: 72px;
+  background: var(--held-main);
+  clip-path: polygon(0 0, 100% 14%, 100% 100%, 0 84%);
+}
+
+.held-right {
+  top: 47px;
+  right: 15px;
+  width: 43px;
+  height: 72px;
+  background: var(--held-dark);
+  clip-path: polygon(0 14%, 100% 0, 100% 84%, 0 100%);
+}
+
+#unsupported {
+  z-index: 100;
+  background: #12191a;
+}
+
+.unsupported-card {
+  max-width: 500px;
+  padding: 35px;
+  border: 1px solid var(--line);
+  text-align: center;
+  background: var(--panel);
+}
+
+.unsupported-card h2 {
+  margin: 0 0 12px;
+  color: var(--lime);
+  text-transform: uppercase;
+}
+
+.unsupported-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 780px), (max-height: 620px) {
+  .screen-layer {
+    padding: 18px;
+  }
+
+  .menu-card {
+    width: min(620px, 94vw);
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .menu-copy h1 {
+    font-size: clamp(49px, 14vw, 75px);
+  }
+
+  .menu-lead {
+    display: none;
+  }
+
+  .menu-actions {
+    padding: 18px;
+  }
+
+  .controls-grid {
+    margin: 18px 0;
+  }
+
+  .desktop-note {
+    display: none;
+  }
+
+  #held-block {
+    right: 18px;
+    bottom: 84px;
+    transform: rotate(-12deg) scale(0.7);
+  }
+
+  .hud-hint,
+  .brand-chip {
+    display: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .controls-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .controls-grid .control-row:nth-child(n + 5) {
+    display: none;
+  }
+
+  .hotbar-slot {
+    width: 36px;
+    height: 39px;
+  }
+
+  .slot-block {
+    width: 20px;
+    height: 20px;
+  }
+
+  .debug-chip {
+    margin-left: auto;
+  }
+
+  #held-block {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+    </style>
+  </head>
+  <body>
+    <main id="game-shell" aria-label="Voxel Frontier game">
+      <canvas id="game-canvas" aria-label="3D voxel world"></canvas>
+
+      <div id="vignette" aria-hidden="true"></div>
+      <div id="water-tint" aria-hidden="true"></div>
+
+      <section id="loading-screen" class="screen-layer visible" aria-live="polite">
+        <div class="loading-brand">
+          <div class="logo-cube" aria-hidden="true">
+            <span class="cube-top"></span>
+            <span class="cube-left"></span>
+            <span class="cube-right"></span>
+          </div>
+          <p class="eyebrow">GENERATING WORLD</p>
+          <h1>VOXEL FRONTIER</h1>
+          <div class="loading-track"><span id="loading-bar"></span></div>
+          <p id="loading-label">Carving terrain… 0%</p>
+        </div>
+      </section>
+
+      <section id="menu-screen" class="screen-layer" aria-labelledby="menu-title">
+        <div class="menu-card">
+          <div class="menu-copy">
+            <p class="eyebrow" id="menu-kicker">A TINY WORLD, BUILT FROM CODE</p>
+            <h1 id="menu-title">VOXEL<br /><span>FRONTIER</span></h1>
+            <p class="menu-lead">
+              Explore a procedural block world. Shape the terrain, build a shelter,
+              or just chase the horizon.
+            </p>
+          </div>
+
+          <div class="menu-actions">
+            <button id="play-button" class="primary-button" type="button" disabled>
+              <span id="play-label">Loading world…</span>
+              <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+
+            <div class="controls-grid" aria-label="Game controls">
+              <div class="control-row"><span class="key wide">WASD</span><span>Move</span></div>
+              <div class="control-row"><span class="key">␣</span><span>Jump / swim</span></div>
+              <div class="control-row"><span class="key wide">SHIFT</span><span>Sprint</span></div>
+              <div class="control-row"><span class="mouse-key left-click"></span><span>Break block</span></div>
+              <div class="control-row"><span class="mouse-key right-click"></span><span>Place block</span></div>
+              <div class="control-row"><span class="key wide">1–8</span><span>Select block</span></div>
+            </div>
+
+            <div class="menu-footer">
+              <span id="seed-label">SEED —</span>
+              <button id="new-world-button" class="text-button" type="button">New world</button>
+            </div>
+          </div>
+        </div>
+        <p class="desktop-note">Desktop browser · Click to capture mouse · Esc to pause</p>
+      </section>
+
+      <section id="hud" aria-label="Game status">
+        <div class="top-hud">
+          <div class="brand-chip"><span class="mini-cube"></span> VOXEL FRONTIER</div>
+          <div id="debug-chip" class="debug-chip">0, 0, 0 · 0 FPS</div>
+        </div>
+
+        <div id="crosshair" aria-hidden="true"><span></span><span></span></div>
+        <div id="action-toast" role="status" aria-live="polite"></div>
+
+        <div id="held-block" aria-hidden="true">
+          <span class="held-top"></span>
+          <span class="held-left"></span>
+          <span class="held-right"></span>
+        </div>
+
+        <div class="bottom-hud">
+          <div id="block-name">GRASS BLOCK</div>
+          <div id="hotbar" role="list" aria-label="Block hotbar"></div>
+          <p class="hud-hint"><span>LMB</span> BREAK&nbsp;&nbsp; <span>RMB</span> PLACE&nbsp;&nbsp; <span>WHEEL</span> SELECT</p>
+        </div>
+      </section>
+
+      <div id="unsupported" class="screen-layer" role="alert">
+        <div class="unsupported-card">
+          <h2>WebGL is unavailable</h2>
+          <p>Voxel Frontier needs WebGL. Try a current version of Chrome, Edge, or Firefox.</p>
+        </div>
+      </div>
+    </main>
+    <script>
+(() => {
+  "use strict";
+
+  const CHUNK_SIZE = 16;
+  const WORLD_HEIGHT = 32;
+  const MIN_CHUNK = -3;
+  const MAX_CHUNK = 2;
+  const WORLD_MIN = MIN_CHUNK * CHUNK_SIZE;
+  const WORLD_MAX = (MAX_CHUNK + 1) * CHUNK_SIZE;
+  const WATER_LEVEL = 7;
+  const PLAYER_HEIGHT = 1.8;
+  const PLAYER_RADIUS = 0.3;
+  const EYE_HEIGHT = 1.62;
+  const REACH = 6;
+  const SAVE_KEY = "voxel-frontier-save-v2";
+  const SAVE_VERSION = 2;
+  const FIXED_STEP = 1 / 60;
+
+  const Block = Object.freeze({
+    AIR: 0,
+    GRASS: 1,
+    DIRT: 2,
+    STONE: 3,
+    SAND: 4,
+    WOOD: 5,
+    LEAVES: 6,
+    BRICK: 7,
+    PLANKS: 8,
+    BEDROCK: 9,
+  });
+
+  const BLOCKS = [
+    { name: "Air", tile: 0, color: "#000000", light: "#000000", dark: "#000000" },
+    { name: "Grass Block", tile: 0, color: "#65a936", light: "#9bd351", dark: "#4a7627" },
+    { name: "Dirt", tile: 1, color: "#855a38", light: "#a8764d", dark: "#5f3e28" },
+    { name: "Stone", tile: 2, color: "#898b87", light: "#b1b2ad", dark: "#62645f" },
+    { name: "Sand", tile: 3, color: "#d6c77b", light: "#eee1a1", dark: "#a89a59" },
+    { name: "Oak Log", tile: 4, color: "#825936", light: "#a97948", dark: "#5d3d27" },
+    { name: "Leaves", tile: 6, color: "#3d8a36", light: "#62b94e", dark: "#285f29" },
+    { name: "Bricks", tile: 7, color: "#a34f3e", light: "#ca725d", dark: "#73372f" },
+    { name: "Oak Planks", tile: 10, color: "#b9854d", light: "#d7a969", dark: "#815a34" },
+    { name: "Bedrock", tile: 9, color: "#353a3b", light: "#565b5b", dark: "#202526" },
+  ];
+
+  const PLACEABLE = [
+    Block.GRASS,
+    Block.DIRT,
+    Block.STONE,
+    Block.SAND,
+    Block.WOOD,
+    Block.BRICK,
+    Block.PLANKS,
+    Block.LEAVES,
+  ];
+
+  const FACES = [
+    {
+      dir: [1, 0, 0],
+      shade: 0.82,
+      corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]],
+    },
+    {
+      dir: [-1, 0, 0],
+      shade: 0.7,
+      corners: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]],
+    },
+    {
+      dir: [0, 1, 0],
+      shade: 1.0,
+      corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]],
+    },
+    {
+      dir: [0, -1, 0],
+      shade: 0.52,
+      corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]],
+    },
+    {
+      dir: [0, 0, 1],
+      shade: 0.77,
+      corners: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]],
+    },
+    {
+      dir: [0, 0, -1],
+      shade: 0.65,
+      corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]],
+    },
+  ];
+
+  const TRIANGLE_ORDER = [0, 1, 2, 0, 2, 3];
+  const UV_CORNERS = [[0, 0], [0, 1], [1, 1], [1, 0]];
+
+  const dom = {
+    canvas: document.getElementById("game-canvas"),
+    loading: document.getElementById("loading-screen"),
+    loadingBar: document.getElementById("loading-bar"),
+    loadingLabel: document.getElementById("loading-label"),
+    menu: document.getElementById("menu-screen"),
+    menuKicker: document.getElementById("menu-kicker"),
+    playButton: document.getElementById("play-button"),
+    playLabel: document.getElementById("play-label"),
+    newWorldButton: document.getElementById("new-world-button"),
+    seedLabel: document.getElementById("seed-label"),
+    hotbar: document.getElementById("hotbar"),
+    blockName: document.getElementById("block-name"),
+    debugChip: document.getElementById("debug-chip"),
+    crosshair: document.getElementById("crosshair"),
+    actionToast: document.getElementById("action-toast"),
+    heldBlock: document.getElementById("held-block"),
+    unsupported: document.getElementById("unsupported"),
+  };
+
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function smoothstep(t) {
+    return t * t * (3 - 2 * t);
+  }
+
+  function moveToward(value, target, amount) {
+    if (value < target) return Math.min(value + amount, target);
+    if (value > target) return Math.max(value - amount, target);
+    return target;
+  }
+
+  function floorDiv(value, divisor) {
+    return Math.floor(value / divisor);
+  }
+
+  function positiveMod(value, divisor) {
+    return ((value % divisor) + divisor) % divisor;
+  }
+
+  function nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+
+  function intHash(x, z, seed) {
+    let h = Math.imul(x | 0, 0x1f123bb5) ^ Math.imul(z | 0, 0x5f356495) ^ (seed | 0);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return (h ^ (h >>> 15)) >>> 0;
+  }
+
+  function hash01(x, z, seed) {
+    return intHash(x, z, seed) / 4294967295;
+  }
+
+  function valueNoise(x, z, seed) {
+    const x0 = Math.floor(x);
+    const z0 = Math.floor(z);
+    const tx = smoothstep(x - x0);
+    const tz = smoothstep(z - z0);
+    const a = hash01(x0, z0, seed);
+    const b = hash01(x0 + 1, z0, seed);
+    const c = hash01(x0, z0 + 1, seed);
+    const d = hash01(x0 + 1, z0 + 1, seed);
+    return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+  }
+
+  function fbm(x, z, seed) {
+    let value = 0;
+    let amplitude = 0.58;
+    let frequency = 0.045;
+    let total = 0;
+    for (let octave = 0; octave < 4; octave += 1) {
+      value += valueNoise(x * frequency, z * frequency, seed + octave * 977) * amplitude;
+      total += amplitude;
+      amplitude *= 0.5;
+      frequency *= 2.03;
+    }
+    return value / total;
+  }
+
+  function makeSeed() {
+    if (window.crypto && window.crypto.getRandomValues) {
+      const data = new Uint32Array(1);
+      window.crypto.getRandomValues(data);
+      return 10000 + (data[0] % 899999);
+    }
+    return 10000 + Math.floor(Math.random() * 899999);
+  }
+
+  function createMat4() {
+    const out = new Float32Array(16);
+    out[0] = 1;
+    out[5] = 1;
+    out[10] = 1;
+    out[15] = 1;
+    return out;
+  }
+
+  function perspective(out, fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2);
+    out.fill(0);
+    out[0] = f / aspect;
+    out[5] = f;
+    out[10] = (far + near) / (near - far);
+    out[11] = -1;
+    out[14] = (2 * far * near) / (near - far);
+    return out;
+  }
+
+  function lookAt(out, eye, center, up) {
+    let zx = eye[0] - center[0];
+    let zy = eye[1] - center[1];
+    let zz = eye[2] - center[2];
+    let length = Math.hypot(zx, zy, zz) || 1;
+    zx /= length;
+    zy /= length;
+    zz /= length;
+
+    let xx = up[1] * zz - up[2] * zy;
+    let xy = up[2] * zx - up[0] * zz;
+    let xz = up[0] * zy - up[1] * zx;
+    length = Math.hypot(xx, xy, xz) || 1;
+    xx /= length;
+    xy /= length;
+    xz /= length;
+
+    const yx = zy * xz - zz * xy;
+    const yy = zz * xx - zx * xz;
+    const yz = zx * xy - zy * xx;
+
+    out[0] = xx;
+    out[1] = yx;
+    out[2] = zx;
+    out[3] = 0;
+    out[4] = xy;
+    out[5] = yy;
+    out[6] = zy;
+    out[7] = 0;
+    out[8] = xz;
+    out[9] = yz;
+    out[10] = zz;
+    out[11] = 0;
+    out[12] = -(xx * eye[0] + xy * eye[1] + xz * eye[2]);
+    out[13] = -(yx * eye[0] + yy * eye[1] + yz * eye[2]);
+    out[14] = -(zx * eye[0] + zy * eye[1] + zz * eye[2]);
+    out[15] = 1;
+    return out;
+  }
+
+  class Chunk {
+    constructor(cx, cz) {
+      this.cx = cx;
+      this.cz = cz;
+      this.data = new Uint8Array(CHUNK_SIZE * WORLD_HEIGHT * CHUNK_SIZE);
+      this.buffer = null;
+      this.vertexCount = 0;
+      this.dirty = true;
+    }
+
+    index(lx, y, lz) {
+      return lx + CHUNK_SIZE * (lz + CHUNK_SIZE * y);
+    }
+
+    get(lx, y, lz) {
+      return this.data[this.index(lx, y, lz)];
+    }
+
+    set(lx, y, lz, block) {
+      this.data[this.index(lx, y, lz)] = block;
+    }
+  }
+
+  class World {
+    constructor(seed, savedEdits = {}) {
+      this.seed = seed | 0;
+      this.chunks = new Map();
+      this.edits = { ...savedEdits };
+      this.onEdit = null;
+
+      for (let cz = MIN_CHUNK; cz <= MAX_CHUNK; cz += 1) {
+        for (let cx = MIN_CHUNK; cx <= MAX_CHUNK; cx += 1) {
+          this.chunks.set(this.key(cx, cz), new Chunk(cx, cz));
+        }
+      }
+    }
+
+    key(cx, cz) {
+      return `${cx},${cz}`;
+    }
+
+    editKey(x, y, z) {
+      return `${x},${y},${z}`;
+    }
+
+    getChunk(cx, cz) {
+      return this.chunks.get(this.key(cx, cz)) || null;
+    }
+
+    getBlock(x, y, z) {
+      if (y < 0 || y >= WORLD_HEIGHT) return Block.AIR;
+      const cx = floorDiv(x, CHUNK_SIZE);
+      const cz = floorDiv(z, CHUNK_SIZE);
+      const chunk = this.getChunk(cx, cz);
+      if (!chunk) return Block.AIR;
+      return chunk.get(positiveMod(x, CHUNK_SIZE), y, positiveMod(z, CHUNK_SIZE));
+    }
+
+    setRaw(x, y, z, block) {
+      if (y < 0 || y >= WORLD_HEIGHT) return false;
+      const cx = floorDiv(x, CHUNK_SIZE);
+      const cz = floorDiv(z, CHUNK_SIZE);
+      const chunk = this.getChunk(cx, cz);
+      if (!chunk) return false;
+      chunk.set(positiveMod(x, CHUNK_SIZE), y, positiveMod(z, CHUNK_SIZE), block);
+      return true;
+    }
+
+    setBlock(x, y, z, block, record = true) {
+      if (y <= 0 || y >= WORLD_HEIGHT) return false;
+      const cx = floorDiv(x, CHUNK_SIZE);
+      const cz = floorDiv(z, CHUNK_SIZE);
+      const chunk = this.getChunk(cx, cz);
+      if (!chunk) return false;
+
+      const lx = positiveMod(x, CHUNK_SIZE);
+      const lz = positiveMod(z, CHUNK_SIZE);
+      if (chunk.get(lx, y, lz) === block) return false;
+      chunk.set(lx, y, lz, block);
+      chunk.dirty = true;
+
+      if (lx === 0) this.markDirty(cx - 1, cz);
+      if (lx === CHUNK_SIZE - 1) this.markDirty(cx + 1, cz);
+      if (lz === 0) this.markDirty(cx, cz - 1);
+      if (lz === CHUNK_SIZE - 1) this.markDirty(cx, cz + 1);
+
+      if (record) {
+        this.edits[this.editKey(x, y, z)] = block;
+        if (this.onEdit) this.onEdit();
+      }
+      return true;
+    }
+
+    markDirty(cx, cz) {
+      const chunk = this.getChunk(cx, cz);
+      if (chunk) chunk.dirty = true;
+    }
+
+    terrainHeight(x, z) {
+      const broad = fbm(x, z, this.seed);
+      const detail = valueNoise(x * 0.105 + 43.7, z * 0.105 - 27.2, this.seed + 404);
+      const ridgeNoise = valueNoise(x * 0.022 - 100.3, z * 0.022 + 90.1, this.seed + 811);
+      const ridge = 1 - Math.abs(ridgeNoise * 2 - 1);
+      return clamp(Math.floor(3.6 + broad * 11.2 + detail * 2 + ridge * 2.1), 4, 20);
+    }
+
+    async generate(reportProgress) {
+      const chunks = [...this.chunks.values()];
+
+      for (let index = 0; index < chunks.length; index += 1) {
+        const chunk = chunks[index];
+        const originX = chunk.cx * CHUNK_SIZE;
+        const originZ = chunk.cz * CHUNK_SIZE;
+
+        for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+          for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+            const x = originX + lx;
+            const z = originZ + lz;
+            const height = this.terrainHeight(x, z);
+            const beach = height <= WATER_LEVEL + 1;
+
+            for (let y = 0; y <= height; y += 1) {
+              let block = Block.STONE;
+              if (y === 0) block = Block.BEDROCK;
+              else if (y === height) block = beach ? Block.SAND : Block.GRASS;
+              else if (y >= height - 3) block = beach ? Block.SAND : Block.DIRT;
+              chunk.set(lx, y, lz, block);
+            }
+          }
+        }
+
+        reportProgress(0.06 + ((index + 1) / chunks.length) * 0.35, "Raising hills");
+        if (index % 4 === 3) await nextFrame();
+      }
+
+      reportProgress(0.43, "Planting forests");
+      await nextFrame();
+      this.generateTrees();
+
+      reportProgress(0.48, "Restoring your builds");
+      this.applySavedEdits();
+      await nextFrame();
+    }
+
+    generateTrees() {
+      for (let z = WORLD_MIN + 3; z < WORLD_MAX - 3; z += 1) {
+        for (let x = WORLD_MIN + 3; x < WORLD_MAX - 3; x += 1) {
+          if (hash01(x, z, this.seed + 1907) < 0.986) continue;
+          const groundY = this.findGroundY(x, z);
+          if (groundY <= WATER_LEVEL + 1 || this.getBlock(x, groundY, z) !== Block.GRASS) continue;
+          if (this.findGroundY(x + 1, z) < groundY - 1 || this.findGroundY(x, z + 1) < groundY - 1) continue;
+
+          const trunkHeight = hash01(x, z, this.seed + 2711) > 0.55 ? 5 : 4;
+          if (groundY + trunkHeight + 2 >= WORLD_HEIGHT) continue;
+
+          for (let y = 1; y <= trunkHeight; y += 1) {
+            this.setRaw(x, groundY + y, z, Block.WOOD);
+          }
+
+          const crownY = groundY + trunkHeight;
+          for (let dy = -2; dy <= 2; dy += 1) {
+            const radius = dy === 2 ? 1 : 2;
+            for (let dz = -radius; dz <= radius; dz += 1) {
+              for (let dx = -radius; dx <= radius; dx += 1) {
+                if (Math.abs(dx) + Math.abs(dz) > radius * 1.7) continue;
+                const px = x + dx;
+                const py = crownY + dy;
+                const pz = z + dz;
+                if (this.getBlock(px, py, pz) === Block.AIR) {
+                  this.setRaw(px, py, pz, Block.LEAVES);
+                }
+              }
+            }
+          }
+          this.setRaw(x, crownY + 2, z, Block.LEAVES);
+        }
+      }
+    }
+
+    applySavedEdits() {
+      for (const [key, block] of Object.entries(this.edits)) {
+        const parts = key.split(",").map(Number);
+        if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) continue;
+        if (!Number.isInteger(block) || block < Block.AIR || block > Block.BEDROCK) continue;
+        this.setRaw(parts[0], parts[1], parts[2], block);
+      }
+      for (const chunk of this.chunks.values()) chunk.dirty = true;
+    }
+
+    findGroundY(x, z) {
+      for (let y = WORLD_HEIGHT - 1; y >= 0; y -= 1) {
+        const block = this.getBlock(x, y, z);
+        if (block !== Block.AIR && block !== Block.LEAVES && block !== Block.WOOD) return y;
+      }
+      return 0;
+    }
+
+    findSpawn() {
+      let best = null;
+      for (let radius = 0; radius <= 14; radius += 1) {
+        for (let z = -radius; z <= radius; z += 1) {
+          for (let x = -radius; x <= radius; x += 1) {
+            if (radius > 0 && Math.abs(x) !== radius && Math.abs(z) !== radius) continue;
+            const ground = this.findGroundY(x, z);
+            if (ground <= WATER_LEVEL + 1) continue;
+            if (this.getBlock(x, ground + 1, z) !== Block.AIR) continue;
+            if (this.getBlock(x, ground + 2, z) !== Block.AIR) continue;
+            const candidate = { x: x + 0.5, y: ground + 1.001, z: z + 0.5 };
+            if (!best || ground > best.ground) best = { ...candidate, ground };
+          }
+        }
+        if (best) return best;
+      }
+      return { x: 0.5, y: 22, z: 0.5 };
+    }
+
+    isSolid(block) {
+      return block !== Block.AIR;
+    }
+  }
+
+  class Renderer {
+    constructor(canvas) {
+      this.canvas = canvas;
+      this.gl = canvas.getContext("webgl", {
+        alpha: true,
+        antialias: false,
+        premultipliedAlpha: false,
+        powerPreference: "high-performance",
+      }) || canvas.getContext("experimental-webgl");
+
+      if (!this.gl) throw new Error("WebGL unavailable");
+      this.projection = createMat4();
+      this.view = createMat4();
+      this.fogColor = new Float32Array([0.71, 0.84, 0.87]);
+      this.setupPrograms();
+      this.atlas = this.createAtlas();
+      this.waterBuffer = this.createWaterMesh();
+      this.outlineBuffer = this.createOutlineMesh();
+
+      const gl = this.gl;
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.clearColor(0, 0, 0, 0);
+      this.resize();
+    }
+
+    compileShader(type, source) {
+      const gl = this.gl;
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        const message = gl.getShaderInfoLog(shader);
+        gl.deleteShader(shader);
+        throw new Error(`Shader compilation failed: ${message}`);
+      }
+      return shader;
+    }
+
+    createProgram(vertexSource, fragmentSource) {
+      const gl = this.gl;
+      const program = gl.createProgram();
+      gl.attachShader(program, this.compileShader(gl.VERTEX_SHADER, vertexSource));
+      gl.attachShader(program, this.compileShader(gl.FRAGMENT_SHADER, fragmentSource));
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        const message = gl.getProgramInfoLog(program);
+        gl.deleteProgram(program);
+        throw new Error(`Shader link failed: ${message}`);
+      }
+      return program;
+    }
+
+    setupPrograms() {
+      const worldVertex = `
+        attribute vec3 aPosition;
+        attribute vec2 aTexCoord;
+        attribute float aShade;
+        uniform mat4 uProjection;
+        uniform mat4 uView;
+        varying vec2 vTexCoord;
+        varying float vShade;
+        varying vec3 vWorldPosition;
+        void main() {
+          vTexCoord = aTexCoord;
+          vShade = aShade;
+          vWorldPosition = aPosition;
+          gl_Position = uProjection * uView * vec4(aPosition, 1.0);
+        }
+      `;
+
+      const worldFragment = `
+        precision mediump float;
+        uniform sampler2D uAtlas;
+        uniform vec3 uCameraPosition;
+        uniform vec3 uFogColor;
+        uniform float uLight;
+        varying vec2 vTexCoord;
+        varying float vShade;
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 texel = texture2D(uAtlas, vTexCoord);
+          float distanceToCamera = distance(vWorldPosition, uCameraPosition);
+          float fog = smoothstep(25.0, 58.0, distanceToCamera);
+          vec3 lit = texel.rgb * vShade * uLight;
+          lit += vec3(0.025, 0.035, 0.04);
+          gl_FragColor = vec4(mix(lit, uFogColor, fog), 1.0);
+        }
+      `;
+
+      const waterVertex = `
+        precision mediump float;
+        attribute vec3 aPosition;
+        uniform mat4 uProjection;
+        uniform mat4 uView;
+        uniform float uTime;
+        varying vec3 vWorldPosition;
+        varying float vWave;
+        void main() {
+          vec3 position = aPosition;
+          float waveA = sin((position.x + uTime * 1.8) * 0.22);
+          float waveB = cos((position.z - uTime * 1.15) * 0.19);
+          position.y += waveA * 0.045 + waveB * 0.035;
+          vWorldPosition = position;
+          vWave = waveA * 0.5 + waveB * 0.5;
+          gl_Position = uProjection * uView * vec4(position, 1.0);
+        }
+      `;
+
+      const waterFragment = `
+        precision mediump float;
+        uniform vec3 uCameraPosition;
+        uniform vec3 uFogColor;
+        uniform float uTime;
+        varying vec3 vWorldPosition;
+        varying float vWave;
+        void main() {
+          float ripple = sin(vWorldPosition.x * 0.38 + vWorldPosition.z * 0.31 + uTime * 2.0) * 0.5 + 0.5;
+          vec3 deepColor = vec3(0.08, 0.39, 0.56);
+          vec3 brightColor = vec3(0.22, 0.65, 0.78);
+          vec3 waterColor = mix(deepColor, brightColor, ripple * 0.24 + vWave * 0.08 + 0.2);
+          float distanceToCamera = distance(vWorldPosition, uCameraPosition);
+          float fog = smoothstep(24.0, 57.0, distanceToCamera);
+          gl_FragColor = vec4(mix(waterColor, uFogColor, fog), 0.61);
+        }
+      `;
+
+      const lineVertex = `
+        attribute vec3 aPosition;
+        uniform mat4 uProjection;
+        uniform mat4 uView;
+        uniform vec3 uOffset;
+        void main() {
+          gl_Position = uProjection * uView * vec4(aPosition + uOffset, 1.0);
+        }
+      `;
+
+      const lineFragment = `
+        precision mediump float;
+        void main() {
+          gl_FragColor = vec4(1.0, 1.0, 1.0, 0.92);
+        }
+      `;
+
+      const gl = this.gl;
+      this.worldProgram = this.createProgram(worldVertex, worldFragment);
+      this.worldLocations = {
+        position: gl.getAttribLocation(this.worldProgram, "aPosition"),
+        texCoord: gl.getAttribLocation(this.worldProgram, "aTexCoord"),
+        shade: gl.getAttribLocation(this.worldProgram, "aShade"),
+        projection: gl.getUniformLocation(this.worldProgram, "uProjection"),
+        view: gl.getUniformLocation(this.worldProgram, "uView"),
+        camera: gl.getUniformLocation(this.worldProgram, "uCameraPosition"),
+        fogColor: gl.getUniformLocation(this.worldProgram, "uFogColor"),
+        light: gl.getUniformLocation(this.worldProgram, "uLight"),
+        atlas: gl.getUniformLocation(this.worldProgram, "uAtlas"),
+      };
+
+      this.waterProgram = this.createProgram(waterVertex, waterFragment);
+      this.waterLocations = {
+        position: gl.getAttribLocation(this.waterProgram, "aPosition"),
+        projection: gl.getUniformLocation(this.waterProgram, "uProjection"),
+        view: gl.getUniformLocation(this.waterProgram, "uView"),
+        camera: gl.getUniformLocation(this.waterProgram, "uCameraPosition"),
+        fogColor: gl.getUniformLocation(this.waterProgram, "uFogColor"),
+        time: gl.getUniformLocation(this.waterProgram, "uTime"),
+      };
+
+      this.lineProgram = this.createProgram(lineVertex, lineFragment);
+      this.lineLocations = {
+        position: gl.getAttribLocation(this.lineProgram, "aPosition"),
+        projection: gl.getUniformLocation(this.lineProgram, "uProjection"),
+        view: gl.getUniformLocation(this.lineProgram, "uView"),
+        offset: gl.getUniformLocation(this.lineProgram, "uOffset"),
+      };
+    }
+
+    createAtlas() {
+      const gl = this.gl;
+      const tileSize = 16;
+      const tileCount = 11;
+      const canvas = document.createElement("canvas");
+      canvas.width = tileSize * tileCount;
+      canvas.height = tileSize;
+      const context = canvas.getContext("2d", { alpha: false });
+      const image = context.createImageData(canvas.width, canvas.height);
+
+      const palettes = [
+        [[90, 151, 48], [110, 176, 58], [65, 123, 42]],
+        [[125, 82, 49], [148, 100, 62], [93, 58, 38]],
+        [[125, 128, 124], [153, 155, 150], [91, 94, 92]],
+        [[211, 195, 119], [232, 218, 150], [181, 163, 91]],
+        [[121, 80, 46], [153, 105, 59], [86, 54, 35]],
+        [[144, 102, 59], [181, 134, 78], [103, 68, 42]],
+        [[49, 122, 48], [69, 153, 56], [32, 87, 38]],
+        [[151, 66, 52], [183, 83, 65], [103, 48, 43]],
+        [[117, 78, 47], [88, 149, 45], [78, 51, 33]],
+        [[48, 53, 54], [74, 79, 79], [28, 33, 34]],
+        [[174, 122, 68], [204, 155, 91], [124, 83, 48]],
+      ];
+
+      function putPixel(tile, x, y, color) {
+        const px = tile * tileSize + x;
+        const index = (y * canvas.width + px) * 4;
+        image.data[index] = color[0];
+        image.data[index + 1] = color[1];
+        image.data[index + 2] = color[2];
+        image.data[index + 3] = 255;
+      }
+
+      function noise(tile, x, y) {
+        return intHash(x + tile * 37, y + tile * 71, 8147) % 100;
+      }
+
+      for (let tile = 0; tile < tileCount; tile += 1) {
+        const palette = palettes[tile];
+        for (let y = 0; y < tileSize; y += 1) {
+          for (let x = 0; x < tileSize; x += 1) {
+            const n = noise(tile, x, y);
+            let color = n < 18 ? palette[2] : n > 78 ? palette[1] : palette[0];
+
+            if (tile === 2 && ((x + y * 2 + n) % 11 === 0)) color = palette[2];
+            if (tile === 3 && n < 10) color = [194, 177, 100];
+            if (tile === 4) {
+              const stripe = (x + Math.floor(y / 6)) % 5;
+              color = stripe === 0 ? palette[2] : stripe === 1 ? palette[1] : palette[0];
+              if ((x === 6 || x === 7) && y > 7 && y < 11) color = [72, 43, 29];
+            }
+            if (tile === 5) {
+              const ring = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+              color = Math.floor(ring) % 3 === 0 ? palette[2] : palette[0];
+              if (x > 6 && x < 10 && y > 6 && y < 10) color = palette[1];
+            }
+            if (tile === 6 && (x + y * 3 + n) % 9 === 0) color = [35, 96, 40];
+            if (tile === 7) {
+              const row = Math.floor(y / 5);
+              const mortarY = y % 5 === 0;
+              const shiftedX = x + (row % 2) * 4;
+              const mortarX = shiftedX % 8 === 0;
+              color = mortarY || mortarX ? [105, 92, 81] : (n > 74 ? palette[1] : palette[0]);
+            }
+            if (tile === 8) {
+              if (y < 5 || (y < 8 && n > 55)) color = n > 72 ? [111, 177, 58] : [78, 143, 43];
+              else color = n < 22 ? [92, 58, 38] : [125, 82, 49];
+            }
+            if (tile === 9 && n > 70) color = [85, 90, 89];
+            if (tile === 10) {
+              const seam = y === 0 || y === 8 || ((x + (y < 8 ? 0 : 5)) % 12 === 0);
+              color = seam ? palette[2] : (n > 78 ? palette[1] : palette[0]);
+            }
+
+            putPixel(tile, x, y, color);
+          }
+        }
+      }
+
+      context.putImageData(image, 0, 0);
+      const texture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      return texture;
+    }
+
+    createWaterMesh() {
+      const gl = this.gl;
+      const vertices = [];
+      const step = 4;
+      const y = WATER_LEVEL + 0.36;
+      for (let z = WORLD_MIN; z < WORLD_MAX; z += step) {
+        for (let x = WORLD_MIN; x < WORLD_MAX; x += step) {
+          const x2 = Math.min(x + step, WORLD_MAX);
+          const z2 = Math.min(z + step, WORLD_MAX);
+          vertices.push(
+            x, y, z,
+            x, y, z2,
+            x2, y, z2,
+            x, y, z,
+            x2, y, z2,
+            x2, y, z,
+          );
+        }
+      }
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+      return { buffer, count: vertices.length / 3 };
+    }
+
+    createOutlineMesh() {
+      const gl = this.gl;
+      const a = -0.003;
+      const b = 1.003;
+      const vertices = [
+        a, a, a, b, a, a, b, a, a, b, a, b,
+        b, a, b, a, a, b, a, a, b, a, a, a,
+        a, b, a, b, b, a, b, b, a, b, b, b,
+        b, b, b, a, b, b, a, b, b, a, b, a,
+        a, a, a, a, b, a, b, a, a, b, b, a,
+        b, a, b, b, b, b, a, a, b, a, b, b,
+      ];
+      const buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+      return { buffer, count: vertices.length / 3 };
+    }
+
+    tileForFace(block, faceIndex) {
+      if (block === Block.GRASS) {
+        if (faceIndex === 2) return 0;
+        if (faceIndex === 3) return 1;
+        return 8;
+      }
+      if (block === Block.WOOD) {
+        return faceIndex === 2 || faceIndex === 3 ? 5 : 4;
+      }
+      return BLOCKS[block].tile;
+    }
+
+    buildChunkVertices(chunk, world) {
+      const vertices = [];
+      const atlasTiles = 11;
+      const tilePixels = 16;
+      const atlasWidth = atlasTiles * tilePixels;
+      const originX = chunk.cx * CHUNK_SIZE;
+      const originZ = chunk.cz * CHUNK_SIZE;
+
+      for (let y = 0; y < WORLD_HEIGHT; y += 1) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+          for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+            const block = chunk.get(lx, y, lz);
+            if (block === Block.AIR) continue;
+            const x = originX + lx;
+            const z = originZ + lz;
+            const variation = 0.96 + hash01(x, z + y * 17, 5519) * 0.06;
+
+            for (let faceIndex = 0; faceIndex < FACES.length; faceIndex += 1) {
+              const face = FACES[faceIndex];
+              if (world.getBlock(x + face.dir[0], y + face.dir[1], z + face.dir[2]) !== Block.AIR) continue;
+              const tile = this.tileForFace(block, faceIndex);
+              const u0 = (tile * tilePixels + 0.5) / atlasWidth;
+              const u1 = (tile * tilePixels + tilePixels - 0.5) / atlasWidth;
+              const v0 = 0.5 / tilePixels;
+              const v1 = (tilePixels - 0.5) / tilePixels;
+              const shade = face.shade * variation;
+
+              for (const cornerIndex of TRIANGLE_ORDER) {
+                const corner = face.corners[cornerIndex];
+                const uv = UV_CORNERS[cornerIndex];
+                vertices.push(
+                  x + corner[0],
+                  y + corner[1],
+                  z + corner[2],
+                  uv[0] === 0 ? u0 : u1,
+                  uv[1] === 0 ? v0 : v1,
+                  shade,
+                );
+              }
+            }
+          }
+        }
+      }
+      return new Float32Array(vertices);
+    }
+
+    rebuildChunk(chunk, world) {
+      const gl = this.gl;
+      const data = this.buildChunkVertices(chunk, world);
+      if (!chunk.buffer) chunk.buffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, chunk.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+      chunk.vertexCount = data.length / 6;
+      chunk.dirty = false;
+    }
+
+    resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.75);
+      const width = Math.max(1, Math.floor(this.canvas.clientWidth * dpr));
+      const height = Math.max(1, Math.floor(this.canvas.clientHeight * dpr));
+      if (this.canvas.width !== width || this.canvas.height !== height) {
+        this.canvas.width = width;
+        this.canvas.height = height;
+      }
+      this.gl.viewport(0, 0, width, height);
+    }
+
+    render(world, camera, target, timeSeconds) {
+      const gl = this.gl;
+      this.resize();
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      if (!world || !camera) return;
+
+      perspective(this.projection, camera.fov * Math.PI / 180, this.canvas.width / this.canvas.height, 0.075, 76);
+      const center = [
+        camera.position[0] + camera.direction[0],
+        camera.position[1] + camera.direction[1],
+        camera.position[2] + camera.direction[2],
+      ];
+      lookAt(this.view, camera.position, center, [0, 1, 0]);
+
+      gl.useProgram(this.worldProgram);
+      gl.uniformMatrix4fv(this.worldLocations.projection, false, this.projection);
+      gl.uniformMatrix4fv(this.worldLocations.view, false, this.view);
+      gl.uniform3fv(this.worldLocations.camera, camera.position);
+      gl.uniform3fv(this.worldLocations.fogColor, this.fogColor);
+      gl.uniform1f(this.worldLocations.light, 1.02);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.atlas);
+      gl.uniform1i(this.worldLocations.atlas, 0);
+      gl.enableVertexAttribArray(this.worldLocations.position);
+      gl.enableVertexAttribArray(this.worldLocations.texCoord);
+      gl.enableVertexAttribArray(this.worldLocations.shade);
+      gl.enable(gl.CULL_FACE);
+      gl.disable(gl.BLEND);
+      gl.depthMask(true);
+
+      for (const chunk of world.chunks.values()) {
+        if (!chunk.buffer || chunk.vertexCount === 0) continue;
+        const centerX = chunk.cx * CHUNK_SIZE + CHUNK_SIZE * 0.5;
+        const centerZ = chunk.cz * CHUNK_SIZE + CHUNK_SIZE * 0.5;
+        if (Math.hypot(centerX - camera.position[0], centerZ - camera.position[2]) > 73) continue;
+        gl.bindBuffer(gl.ARRAY_BUFFER, chunk.buffer);
+        gl.vertexAttribPointer(this.worldLocations.position, 3, gl.FLOAT, false, 24, 0);
+        gl.vertexAttribPointer(this.worldLocations.texCoord, 2, gl.FLOAT, false, 24, 12);
+        gl.vertexAttribPointer(this.worldLocations.shade, 1, gl.FLOAT, false, 24, 20);
+        gl.drawArrays(gl.TRIANGLES, 0, chunk.vertexCount);
+      }
+
+      gl.disableVertexAttribArray(this.worldLocations.position);
+      gl.disableVertexAttribArray(this.worldLocations.texCoord);
+      gl.disableVertexAttribArray(this.worldLocations.shade);
+
+      gl.useProgram(this.waterProgram);
+      gl.uniformMatrix4fv(this.waterLocations.projection, false, this.projection);
+      gl.uniformMatrix4fv(this.waterLocations.view, false, this.view);
+      gl.uniform3fv(this.waterLocations.camera, camera.position);
+      gl.uniform3fv(this.waterLocations.fogColor, this.fogColor);
+      gl.uniform1f(this.waterLocations.time, timeSeconds);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.waterBuffer.buffer);
+      gl.enableVertexAttribArray(this.waterLocations.position);
+      gl.vertexAttribPointer(this.waterLocations.position, 3, gl.FLOAT, false, 12, 0);
+      gl.disable(gl.CULL_FACE);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.depthMask(false);
+      gl.drawArrays(gl.TRIANGLES, 0, this.waterBuffer.count);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.disableVertexAttribArray(this.waterLocations.position);
+
+      if (target) {
+        gl.useProgram(this.lineProgram);
+        gl.uniformMatrix4fv(this.lineLocations.projection, false, this.projection);
+        gl.uniformMatrix4fv(this.lineLocations.view, false, this.view);
+        gl.uniform3f(this.lineLocations.offset, target.hit.x, target.hit.y, target.hit.z);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.outlineBuffer.buffer);
+        gl.enableVertexAttribArray(this.lineLocations.position);
+        gl.vertexAttribPointer(this.lineLocations.position, 3, gl.FLOAT, false, 12, 0);
+        gl.disable(gl.CULL_FACE);
+        gl.drawArrays(gl.LINES, 0, this.outlineBuffer.count);
+        gl.disableVertexAttribArray(this.lineLocations.position);
+      }
+    }
+  }
+
+  class SoundBank {
+    constructor() {
+      this.context = null;
+    }
+
+    ensure() {
+      if (!this.context) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) this.context = new AudioContext();
+      }
+      if (this.context && this.context.state === "suspended") this.context.resume();
+    }
+
+    play(type) {
+      if (!this.context) return;
+      const now = this.context.currentTime;
+      const oscillator = this.context.createOscillator();
+      const gain = this.context.createGain();
+      oscillator.type = type === "place" ? "square" : "triangle";
+
+      let startFrequency = 130;
+      let endFrequency = 75;
+      let duration = 0.075;
+      let volume = 0.035;
+      if (type === "place") {
+        startFrequency = 175;
+        endFrequency = 120;
+        duration = 0.055;
+      } else if (type === "jump") {
+        startFrequency = 220;
+        endFrequency = 305;
+        duration = 0.09;
+        volume = 0.025;
+      } else if (type === "error") {
+        startFrequency = 85;
+        endFrequency = 70;
+        duration = 0.11;
+        volume = 0.024;
+      }
+
+      oscillator.frequency.setValueAtTime(startFrequency, now);
+      oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+      oscillator.connect(gain);
+      gain.connect(this.context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + duration + 0.01);
+    }
+  }
+
+  class Input {
+    constructor(game) {
+      this.game = game;
+      this.keys = new Set();
+      this.jumpQueued = false;
+      this.bind();
+    }
+
+    bind() {
+      window.addEventListener("keydown", (event) => {
+        if (!this.game.ready) return;
+        const locked = document.pointerLockElement === dom.canvas;
+
+        if (/^Digit[1-8]$/.test(event.code)) {
+          if (locked) {
+            this.game.selectSlot(Number(event.code.slice(5)) - 1);
+            event.preventDefault();
+          }
+          return;
+        }
+
+        if (event.code === "KeyR" && locked) {
+          this.game.player.respawn(true);
+          this.game.toast("Returned to spawn");
+          event.preventDefault();
+          return;
+        }
+
+        if (!locked) return;
+        if (event.code === "Space" && !event.repeat) this.jumpQueued = true;
+        this.keys.add(event.code);
+        if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.code)) {
+          event.preventDefault();
+        }
+      });
+
+      window.addEventListener("keyup", (event) => {
+        this.keys.delete(event.code);
+      });
+
+      document.addEventListener("mousemove", (event) => {
+        if (document.pointerLockElement !== dom.canvas || !this.game.player) return;
+        this.game.player.yaw += event.movementX * 0.00215;
+        this.game.player.pitch = clamp(this.game.player.pitch - event.movementY * 0.00215, -1.535, 1.535);
+      });
+
+      dom.canvas.addEventListener("mousedown", (event) => {
+        if (document.pointerLockElement !== dom.canvas || !this.game.ready) return;
+        event.preventDefault();
+        if (event.button === 0) this.game.breakTarget();
+        if (event.button === 2) this.game.placeTarget();
+      });
+
+      dom.canvas.addEventListener("wheel", (event) => {
+        if (document.pointerLockElement !== dom.canvas || !this.game.ready) return;
+        event.preventDefault();
+        this.game.selectSlot(this.game.selectedSlot + (event.deltaY > 0 ? 1 : -1), true);
+      }, { passive: false });
+
+      dom.canvas.addEventListener("contextmenu", (event) => event.preventDefault());
+      window.addEventListener("blur", () => this.clear());
+      document.addEventListener("pointerlockchange", () => {
+        this.clear();
+        this.game.onPointerLockChange();
+      });
+    }
+
+    down(code) {
+      return this.keys.has(code);
+    }
+
+    consumeJump() {
+      const queued = this.jumpQueued;
+      this.jumpQueued = false;
+      return queued;
+    }
+
+    clear() {
+      this.keys.clear();
+      this.jumpQueued = false;
+    }
+  }
+
+  class Player {
+    constructor(world, spawn, sounds) {
+      this.world = world;
+      this.spawn = { x: spawn.x, y: spawn.y, z: spawn.z };
+      this.x = spawn.x;
+      this.y = spawn.y;
+      this.z = spawn.z;
+      this.vx = 0;
+      this.vy = 0;
+      this.vz = 0;
+      this.yaw = Math.PI * 0.17;
+      this.pitch = -0.08;
+      this.onGround = false;
+      this.inWater = false;
+      this.walkCycle = 0;
+      this.bobStrength = 0;
+      this.fov = 70;
+      this.sounds = sounds;
+    }
+
+    restore(saved) {
+      if (!saved || ![saved.x, saved.y, saved.z, saved.yaw, saved.pitch].every(Number.isFinite)) return;
+      if (saved.x < WORLD_MIN + 1 || saved.x > WORLD_MAX - 1 || saved.z < WORLD_MIN + 1 || saved.z > WORLD_MAX - 1) return;
+      const old = { x: this.x, y: this.y, z: this.z };
+      this.x = saved.x;
+      this.y = saved.y;
+      this.z = saved.z;
+      this.yaw = saved.yaw;
+      this.pitch = clamp(saved.pitch, -1.535, 1.535);
+      if (this.collidesAt(this.x, this.y, this.z)) {
+        this.x = old.x;
+        this.y = old.y;
+        this.z = old.z;
+      }
+    }
+
+    update(dt, input) {
+      const forwardInput = (input.down("KeyW") ? 1 : 0) - (input.down("KeyS") ? 1 : 0);
+      const strafeInput = (input.down("KeyD") ? 1 : 0) - (input.down("KeyA") ? 1 : 0);
+      const inputLength = Math.hypot(forwardInput, strafeInput) || 1;
+      const forward = forwardInput / inputLength;
+      const strafe = strafeInput / inputLength;
+
+      this.inWater = this.y + 0.8 < WATER_LEVEL + 0.4 &&
+        this.world.getBlock(Math.floor(this.x), Math.floor(this.y + 0.8), Math.floor(this.z)) === Block.AIR;
+
+      const sprinting = input.down("ShiftLeft") || input.down("ShiftRight");
+      let speed = sprinting ? 7.1 : 4.65;
+      if (this.inWater) speed *= 0.58;
+      const sinYaw = Math.sin(this.yaw);
+      const cosYaw = Math.cos(this.yaw);
+      const desiredX = (sinYaw * forward + cosYaw * strafe) * speed;
+      const desiredZ = (-cosYaw * forward + sinYaw * strafe) * speed;
+      const acceleration = this.inWater ? 11 : this.onGround ? 31 : 8.5;
+      this.vx = moveToward(this.vx, desiredX, acceleration * dt);
+      this.vz = moveToward(this.vz, desiredZ, acceleration * dt);
+
+      const wantsJump = input.consumeJump();
+      if (wantsJump && this.onGround) {
+        this.vy = 7.65;
+        this.onGround = false;
+        this.sounds.play("jump");
+      } else if (wantsJump && this.inWater) {
+        this.vy = 4.0;
+        this.sounds.play("jump");
+      }
+      if (this.inWater && input.down("Space")) this.vy += 10.5 * dt;
+
+      this.vy += (this.inWater ? -5.2 : -22.5) * dt;
+      this.vy = Math.max(this.vy, this.inWater ? -4 : -34);
+      this.onGround = false;
+      this.moveAxis("x", this.vx * dt);
+      this.moveAxis("z", this.vz * dt);
+      this.moveAxis("y", this.vy * dt);
+      if (!this.onGround && this.collidesAt(this.x, this.y - 0.035, this.z)) this.onGround = true;
+
+      const horizontalSpeed = Math.hypot(this.vx, this.vz);
+      if (this.onGround && horizontalSpeed > 0.25) {
+        this.walkCycle += dt * horizontalSpeed * 1.9;
+        this.bobStrength = moveToward(this.bobStrength, 1, dt * 7);
+      } else {
+        this.bobStrength = moveToward(this.bobStrength, 0, dt * 6);
+      }
+
+      const targetFov = sprinting && forwardInput > 0 && !this.inWater ? 76 : this.inWater ? 67 : 70;
+      this.fov = lerp(this.fov, targetFov, Math.min(1, dt * 7));
+
+      if (this.y < -12) this.respawn(false);
+    }
+
+    moveAxis(axis, amount) {
+      if (Math.abs(amount) < 0.000001) return;
+      const steps = Math.max(1, Math.ceil(Math.abs(amount) / 0.075));
+      const step = amount / steps;
+      for (let i = 0; i < steps; i += 1) {
+        this[axis] += step;
+        if (this.collidesAt(this.x, this.y, this.z)) {
+          this[axis] -= step;
+          if (axis === "y" && step < 0) this.onGround = true;
+          if (axis === "x") this.vx = 0;
+          if (axis === "y") this.vy = 0;
+          if (axis === "z") this.vz = 0;
+          return;
+        }
+      }
+    }
+
+    collidesAt(x, y, z) {
+      const epsilon = 0.001;
+      const minX = Math.floor(x - PLAYER_RADIUS + epsilon);
+      const maxX = Math.floor(x + PLAYER_RADIUS - epsilon);
+      const minY = Math.floor(y + epsilon);
+      const maxY = Math.floor(y + PLAYER_HEIGHT - epsilon);
+      const minZ = Math.floor(z - PLAYER_RADIUS + epsilon);
+      const maxZ = Math.floor(z + PLAYER_RADIUS - epsilon);
+      for (let by = minY; by <= maxY; by += 1) {
+        for (let bz = minZ; bz <= maxZ; bz += 1) {
+          for (let bx = minX; bx <= maxX; bx += 1) {
+            if (this.world.isSolid(this.world.getBlock(bx, by, bz))) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    intersectsBlock(x, y, z) {
+      const playerMinX = this.x - PLAYER_RADIUS;
+      const playerMaxX = this.x + PLAYER_RADIUS;
+      const playerMinY = this.y;
+      const playerMaxY = this.y + PLAYER_HEIGHT;
+      const playerMinZ = this.z - PLAYER_RADIUS;
+      const playerMaxZ = this.z + PLAYER_RADIUS;
+      return playerMaxX > x && playerMinX < x + 1 &&
+        playerMaxY > y && playerMinY < y + 1 &&
+        playerMaxZ > z && playerMinZ < z + 1;
+    }
+
+    respawn(manual) {
+      this.x = this.spawn.x;
+      this.y = this.spawn.y;
+      this.z = this.spawn.z;
+      this.vx = 0;
+      this.vy = 0;
+      this.vz = 0;
+      this.onGround = false;
+      if (!manual) this.sounds.play("error");
+    }
+
+    direction() {
+      const cosPitch = Math.cos(this.pitch);
+      return [
+        Math.sin(this.yaw) * cosPitch,
+        Math.sin(this.pitch),
+        -Math.cos(this.yaw) * cosPitch,
+      ];
+    }
+
+    camera() {
+      const bobY = Math.abs(Math.sin(this.walkCycle * 2.2)) * 0.035 * this.bobStrength;
+      const sway = Math.sin(this.walkCycle * 1.1) * 0.018 * this.bobStrength;
+      return {
+        position: new Float32Array([this.x + sway, this.y + EYE_HEIGHT + bobY, this.z]),
+        direction: this.direction(),
+        fov: this.fov,
+      };
+    }
+
+    saveData() {
+      return {
+        x: Math.round(this.x * 1000) / 1000,
+        y: Math.round(this.y * 1000) / 1000,
+        z: Math.round(this.z * 1000) / 1000,
+        yaw: this.yaw,
+        pitch: this.pitch,
+      };
+    }
+  }
+
+  function raycast(world, origin, direction, maxDistance) {
+    let x = Math.floor(origin[0]);
+    let y = Math.floor(origin[1]);
+    let z = Math.floor(origin[2]);
+    const stepX = direction[0] > 0 ? 1 : direction[0] < 0 ? -1 : 0;
+    const stepY = direction[1] > 0 ? 1 : direction[1] < 0 ? -1 : 0;
+    const stepZ = direction[2] > 0 ? 1 : direction[2] < 0 ? -1 : 0;
+    const deltaX = stepX === 0 ? Infinity : Math.abs(1 / direction[0]);
+    const deltaY = stepY === 0 ? Infinity : Math.abs(1 / direction[1]);
+    const deltaZ = stepZ === 0 ? Infinity : Math.abs(1 / direction[2]);
+    let maxX = stepX > 0 ? (x + 1 - origin[0]) * deltaX : stepX < 0 ? (origin[0] - x) * deltaX : Infinity;
+    let maxY = stepY > 0 ? (y + 1 - origin[1]) * deltaY : stepY < 0 ? (origin[1] - y) * deltaY : Infinity;
+    let maxZ = stepZ > 0 ? (z + 1 - origin[2]) * deltaZ : stepZ < 0 ? (origin[2] - z) * deltaZ : Infinity;
+    let distance = 0;
+    let previous = null;
+
+    while (distance <= maxDistance) {
+      const block = world.getBlock(x, y, z);
+      if (block !== Block.AIR) {
+        return { hit: { x, y, z }, place: previous, block, distance };
+      }
+      previous = { x, y, z };
+
+      if (maxX <= maxY && maxX <= maxZ) {
+        x += stepX;
+        distance = maxX;
+        maxX += deltaX;
+      } else if (maxY <= maxZ) {
+        y += stepY;
+        distance = maxY;
+        maxY += deltaY;
+      } else {
+        z += stepZ;
+        distance = maxZ;
+        maxZ += deltaZ;
+      }
+    }
+    return null;
+  }
+
+  class Game {
+    constructor() {
+      this.ready = false;
+      this.hasPlayed = false;
+      this.selectedSlot = 0;
+      this.target = null;
+      this.accumulator = 0;
+      this.lastTime = performance.now();
+      this.lastFpsUpdate = 0;
+      this.framesSinceFps = 0;
+      this.fps = 0;
+      this.toastTimer = 0;
+      this.saveTimer = 0;
+      this.lastPeriodicSave = 0;
+      this.resetArmed = false;
+      this.sounds = new SoundBank();
+
+      try {
+        this.renderer = new Renderer(dom.canvas);
+      } catch (error) {
+        console.error(error);
+        dom.loading.classList.remove("visible");
+        dom.unsupported.classList.add("visible");
+        return;
+      }
+
+      this.saved = this.readSave();
+      this.world = new World(this.saved.seed, this.saved.edits);
+      this.world.onEdit = () => this.scheduleSave();
+      this.input = new Input(this);
+      this.bindUI();
+      this.buildHotbar();
+      dom.seedLabel.textContent = `SEED ${this.world.seed}`;
+      this.initialize();
+      requestAnimationFrame((time) => this.loop(time));
+    }
+
+    readSave() {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed.version === SAVE_VERSION && Number.isInteger(parsed.seed) && parsed.edits && typeof parsed.edits === "object") {
+            return { seed: parsed.seed, edits: parsed.edits, player: parsed.player || null };
+          }
+        }
+      } catch (error) {
+        console.warn("Save data could not be loaded; starting a fresh world.", error);
+      }
+      return { seed: makeSeed(), edits: {}, player: null };
+    }
+
+    bindUI() {
+      dom.playButton.addEventListener("click", () => this.requestPlay());
+      dom.newWorldButton.addEventListener("click", () => {
+        if (!this.resetArmed) {
+          this.resetArmed = true;
+          dom.newWorldButton.textContent = "Click again to reset";
+          window.setTimeout(() => {
+            this.resetArmed = false;
+            dom.newWorldButton.textContent = "New world";
+          }, 3000);
+          return;
+        }
+        try {
+          localStorage.removeItem(SAVE_KEY);
+        } catch (error) {
+          console.warn("Could not clear save data.", error);
+        }
+        window.location.reload();
+      });
+      window.addEventListener("beforeunload", () => this.save());
+    }
+
+    buildHotbar() {
+      dom.hotbar.replaceChildren();
+      PLACEABLE.forEach((block, index) => {
+        const info = BLOCKS[block];
+        const slot = document.createElement("div");
+        slot.className = "hotbar-slot";
+        slot.setAttribute("role", "listitem");
+        slot.setAttribute("aria-label", `${index + 1}: ${info.name}`);
+        slot.innerHTML = `<span class="slot-number">${index + 1}</span><span class="slot-block"></span>`;
+        const icon = slot.querySelector(".slot-block");
+        icon.style.setProperty("--block-color", info.color);
+        icon.style.setProperty("--block-shadow", info.dark);
+        dom.hotbar.appendChild(slot);
+      });
+      this.selectSlot(0);
+    }
+
+    async initialize() {
+      try {
+        this.updateLoading(0.02, "Reading the seed");
+        await nextFrame();
+        await this.world.generate((progress, label) => this.updateLoading(progress, label));
+
+        const chunks = [...this.world.chunks.values()];
+        for (let index = 0; index < chunks.length; index += 1) {
+          this.renderer.rebuildChunk(chunks[index], this.world);
+          const progress = 0.5 + ((index + 1) / chunks.length) * 0.47;
+          this.updateLoading(progress, "Building the horizon");
+          if (index % 3 === 2) await nextFrame();
+        }
+
+        const spawn = this.world.findSpawn();
+        this.player = new Player(this.world, spawn, this.sounds);
+        this.player.restore(this.saved.player);
+        this.ready = true;
+        document.body.classList.add("game-ready");
+        this.updateLoading(1, "World ready");
+        dom.playButton.disabled = false;
+        dom.playLabel.textContent = "Enter world";
+        this.save();
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+        dom.loading.classList.remove("visible");
+        dom.menu.classList.add("visible");
+      } catch (error) {
+        console.error(error);
+        dom.loadingLabel.textContent = "The world could not be generated. See the browser console.";
+      }
+    }
+
+    updateLoading(progress, label) {
+      const percent = Math.round(clamp(progress, 0, 1) * 100);
+      dom.loadingBar.style.width = `${percent}%`;
+      dom.loadingLabel.textContent = `${label}… ${percent}%`;
+    }
+
+    requestPlay() {
+      if (!this.ready) return;
+      this.sounds.ensure();
+      const request = dom.canvas.requestPointerLock();
+      if (request && typeof request.catch === "function") {
+        request.catch(() => {
+          dom.playLabel.textContent = "Click again to enter";
+        });
+      }
+    }
+
+    onPointerLockChange() {
+      const locked = document.pointerLockElement === dom.canvas;
+      if (locked) {
+        this.hasPlayed = true;
+        this.sounds.ensure();
+        document.body.classList.add("playing");
+        dom.menu.classList.remove("visible");
+      } else if (this.ready) {
+        document.body.classList.remove("playing");
+        dom.menuKicker.textContent = this.hasPlayed ? "WORLD PAUSED" : "A TINY WORLD, BUILT FROM CODE";
+        dom.playLabel.textContent = this.hasPlayed ? "Resume world" : "Enter world";
+        dom.menu.classList.add("visible");
+        this.save();
+      }
+    }
+
+    selectSlot(index, wrap = false) {
+      const count = PLACEABLE.length;
+      this.selectedSlot = wrap ? positiveMod(index, count) : clamp(index, 0, count - 1);
+      const block = PLACEABLE[this.selectedSlot];
+      const info = BLOCKS[block];
+      [...dom.hotbar.children].forEach((slot, slotIndex) => {
+        slot.classList.toggle("selected", slotIndex === this.selectedSlot);
+      });
+      dom.blockName.textContent = info.name.toUpperCase();
+      dom.heldBlock.style.setProperty("--held-main", info.color);
+      dom.heldBlock.style.setProperty("--held-light", info.light);
+      dom.heldBlock.style.setProperty("--held-dark", info.dark);
+    }
+
+    updateTarget() {
+      if (!this.player) {
+        this.target = null;
+        return;
+      }
+      const camera = this.player.camera();
+      this.target = raycast(this.world, camera.position, camera.direction, REACH);
+    }
+
+    breakTarget() {
+      if (!this.target || this.target.block === Block.BEDROCK) {
+        this.sounds.play("error");
+        this.toast(this.target ? "Bedrock cannot be broken" : "Nothing in reach");
+        return;
+      }
+      const { x, y, z } = this.target.hit;
+      const name = BLOCKS[this.target.block].name;
+      if (this.world.setBlock(x, y, z, Block.AIR)) {
+        this.rebuildDirtyChunks();
+        this.sounds.play("break");
+        this.toast(`Broke ${name}`);
+        this.animateAction();
+        this.updateTarget();
+      }
+    }
+
+    placeTarget() {
+      if (!this.target || !this.target.place) {
+        this.sounds.play("error");
+        this.toast("No surface in reach");
+        return;
+      }
+      const { x, y, z } = this.target.place;
+      const block = PLACEABLE[this.selectedSlot];
+      if (y <= 0 || y >= WORLD_HEIGHT || this.world.getBlock(x, y, z) !== Block.AIR) return;
+      if (this.player.intersectsBlock(x, y, z)) {
+        this.sounds.play("error");
+        this.toast("You are standing there");
+        return;
+      }
+      if (this.world.setBlock(x, y, z, block)) {
+        this.rebuildDirtyChunks();
+        this.sounds.play("place");
+        this.toast(`Placed ${BLOCKS[block].name}`);
+        this.animateAction();
+        this.updateTarget();
+      }
+    }
+
+    rebuildDirtyChunks() {
+      for (const chunk of this.world.chunks.values()) {
+        if (chunk.dirty) this.renderer.rebuildChunk(chunk, this.world);
+      }
+    }
+
+    animateAction() {
+      dom.crosshair.classList.remove("pulse");
+      dom.heldBlock.classList.remove("swing");
+      void dom.crosshair.offsetWidth;
+      dom.crosshair.classList.add("pulse");
+      dom.heldBlock.classList.add("swing");
+      window.setTimeout(() => {
+        dom.crosshair.classList.remove("pulse");
+        dom.heldBlock.classList.remove("swing");
+      }, 105);
+    }
+
+    toast(message) {
+      window.clearTimeout(this.toastTimer);
+      dom.actionToast.textContent = message;
+      dom.actionToast.classList.add("show");
+      this.toastTimer = window.setTimeout(() => dom.actionToast.classList.remove("show"), 900);
+    }
+
+    scheduleSave() {
+      window.clearTimeout(this.saveTimer);
+      this.saveTimer = window.setTimeout(() => this.save(), 280);
+    }
+
+    save() {
+      if (!this.world) return;
+      const data = {
+        version: SAVE_VERSION,
+        seed: this.world.seed,
+        edits: this.world.edits,
+        player: this.player ? this.player.saveData() : null,
+      };
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+      } catch (error) {
+        console.warn("World progress could not be saved.", error);
+      }
+    }
+
+    updateHud(time) {
+      this.framesSinceFps += 1;
+      if (time - this.lastFpsUpdate >= 500) {
+        this.fps = Math.round(this.framesSinceFps * 1000 / Math.max(1, time - this.lastFpsUpdate));
+        this.framesSinceFps = 0;
+        this.lastFpsUpdate = time;
+        if (this.player) {
+          dom.debugChip.textContent = `${Math.floor(this.player.x)}, ${Math.floor(this.player.y)}, ${Math.floor(this.player.z)} · ${this.fps} FPS`;
+        }
+      }
+      if (this.player) document.body.classList.toggle("underwater", this.player.inWater);
+    }
+
+    loop(time) {
+      const frameDelta = Math.min((time - this.lastTime) / 1000, 0.1);
+      this.lastTime = time;
+      const playing = document.pointerLockElement === dom.canvas;
+
+      if (this.ready && this.player && playing) {
+        this.accumulator += frameDelta;
+        let safety = 0;
+        while (this.accumulator >= FIXED_STEP && safety < 8) {
+          this.player.update(FIXED_STEP, this.input);
+          this.accumulator -= FIXED_STEP;
+          safety += 1;
+        }
+        this.updateTarget();
+
+        if (time - this.lastPeriodicSave > 5000) {
+          this.lastPeriodicSave = time;
+          this.scheduleSave();
+        }
+      } else {
+        this.accumulator = 0;
+      }
+
+      const camera = this.player ? this.player.camera() : null;
+      this.renderer.render(this.world, camera, this.target, time / 1000);
+      this.updateHud(time);
+      requestAnimationFrame((nextTime) => this.loop(nextTime));
+    }
+  }
+
+  window.VoxelFrontier = new Game();
+})();
+
+    </script>
+  </body>
+</html>
