@@ -1,5 +1,5 @@
 const mcBenchConfig = {
-  prompt: "Make a Minecraft game. Output only one self-contained HTML file with no external dependencies.",
+  prompt: "Make a 3d Minecraft game. Output only a single HTML file.",
   entries: [
     {
       agent: "ChatGPT",
@@ -12,6 +12,18 @@ const mcBenchConfig = {
       model: "V4 Pro",
       date: "2026-07-18",
       path: "games/deepseek-v4pro/",
+    },
+    {
+      agent: "GLM",
+      model: "5.2",
+      date: "2026-07-18",
+      path: "games/GLM-5.2/",
+    },
+    {
+      agent: "Kimi",
+      model: "K3",
+      date: "2026-07-18",
+      path: "games/kimi-k3/",
     },
   ],
 };

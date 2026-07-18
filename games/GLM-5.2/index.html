@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minecraft 3D</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #87ceeb; }
+  body { font-family: "Courier New", monospace; }
+  #gl { display: block; width: 100%; height: 100%; cursor: none; }
+
+  /* Crosshair */
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 22px; height: 22px; pointer-events: none; z-index: 10;
+    mix-blend-mode: difference;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ""; position: absolute; background: #fff;
+  }
+  #crosshair::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
+  #crosshair::after  { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+
+  /* Hotbar */
+  #hotbar {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.45);
+    border: 2px solid rgba(255,255,255,0.25); border-radius: 4px; z-index: 10;
+  }
+  .slot {
+    width: 48px; height: 48px; border: 2px solid rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    position: relative; background: rgba(0,0,0,0.25);
+  }
+  .slot.active { border-color: #fff; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
+  .slot canvas { width: 36px; height: 36px; image-rendering: pixelated; }
+  .slot .num {
+    position: absolute; top: 1px; left: 3px; font-size: 10px; color: #fff;
+    text-shadow: 1px 1px 0 #000;
+  }
+
+  /* HUD info */
+  #hud {
+    position: fixed; left: 8px; top: 8px; z-index: 10; color: #fff;
+    font-size: 12px; line-height: 1.5; text-shadow: 1px 1px 0 #000;
+    pointer-events: none; white-space: pre;
+  }
+
+  /* Overlay / instructions */
+  #overlay {
+    position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55); color: #fff; text-align: center;
+  }
+  #overlay .box {
+    background: rgba(20,30,40,0.9); border: 2px solid #4a8; border-radius: 8px;
+    padding: 28px 36px; max-width: 460px;
+  }
+  #overlay h1 { font-size: 30px; margin-bottom: 6px; letter-spacing: 2px; color: #6f6; }
+  #overlay p { font-size: 13px; line-height: 1.7; color: #ddd; margin: 8px 0; }
+  #overlay .keys { font-size: 12px; color: #9cf; margin-top: 12px; text-align: left; display: inline-block; }
+  #overlay .keys b { color: #fff; }
+  #overlay .start {
+    margin-top: 18px; display: inline-block; padding: 10px 24px; background: #4a8;
+    color: #fff; border-radius: 4px; font-size: 14px; letter-spacing: 1px;
+  }
+  #overlay.hidden { display: none; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+    background: #87ceeb; color: #fff; font-size: 18px; text-shadow: 1px 1px 0 #000;
+  }
+  #loading.hidden { display: none; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div id="crosshair"></div>
+<div id="hotbar"></div>
+<div id="hud"></div>
+
+<div id="loading">Generating world…</div>
+
+<div id="overlay" class="hidden">
+  <div class="box">
+    <h1>MINECRAFT 3D</h1>
+    <p>A tiny voxel sandbox — built with pure WebGL, zero dependencies.</p>
+    <div class="keys">
+      <b>WASD</b> — move &nbsp; <b>Space</b> — jump &nbsp; <b>Shift</b> — sprint<br>
+      <b>Mouse</b> — look around<br>
+      <b>Left click</b> — break block &nbsp; <b>Right click</b> — place block<br>
+      <b>1–9</b> / <b>scroll</b> — select block &nbsp; <b>F</b> — toggle fly<br>
+      <b>Esc</b> — release mouse
+    </div>
+    <div class="start">CLICK TO PLAY</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Minecraft 3D — single-file pure-WebGL voxel game
+   ============================================================ */
+
+// ---------- Config ----------
+const CHUNK_W = 16;        // chunk size X
+const CHUNK_H = 48;        // world height
+const CHUNK_D = 16;        // chunk size Z
+const CHUNKS_X = 8;        // world chunks along X
+const CHUNKS_Z = 8;        // world chunks along Z
+const WORLD_W = CHUNK_W * CHUNKS_X;
+const WORLD_D = CHUNK_D * CHUNKS_Z;
+const SEA_LEVEL = 20;
+
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_EYE = 1.62;
+const PLAYER_RADIUS = 0.3;
+const GRAVITY = 28;
+const JUMP_SPEED = 9.2;
+const WALK_SPEED = 4.7;
+const SPRINT_SPEED = 7.5;
+const FLY_SPEED = 9.0;
+
+// Block types
+const AIR=0, GRASS=1, DIRT=2, STONE=3, WOOD=4, LEAVES=5, SAND=6, PLANKS=7,
+      BRICK=8, COBBLE=9, GLASS=10, WATER=11, LOG=12, BEDROCK=13;
+
+// Atlas tile index for [top, side, bottom] of each block
+const BLOCK_TILES = {
+  [GRASS]:  [0, 1, 2],
+  [DIRT]:   [2, 2, 2],
+  [STONE]:  [3, 3, 3],
+  [WOOD]:   [4, 5, 4],
+  [LEAVES]: [6, 6, 6],
+  [SAND]:   [7, 7, 7],
+  [PLANKS]: [8, 8, 8],
+  [BRICK]:  [9, 9, 9],
+  [COBBLE]: [10,10,10],
+  [GLASS]:  [11,11,11],
+  [WATER]:  [12,12,12],
+  [LOG]:    [4, 5, 4],
+  [BEDROCK]:[13,13,13],
+};
+const IS_TRANSPARENT = (b)=> b===AIR || b===LEAVES || b===GLASS || b===WATER;
+const IS_SOLID = (b)=> b!==AIR && b!==WATER;
+const IS_LIQUID = (b)=> b===WATER;
+
+// Hotbar blocks
+const HOTBAR = [GRASS, DIRT, STONE, WOOD, PLANKS, COBBLE, SAND, BRICK, LEAVES];
+let selectedSlot = 0;
+
+// ---------- Canvas / WebGL ----------
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl', { antialias: false, alpha: false });
+if (!gl) { document.getElementById('loading').innerText = 'WebGL not supported.'; throw new Error('no webgl'); }
+const INDEX_UINT = gl.getExtension('OES_element_index_uint'); // allows >65535 verts per mesh
+
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- Shaders ----------
+const VS = `
+attribute vec3 aPos;
+attribute vec2 aUV;
+attribute float aLight;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform vec3 uEye;
+varying vec2 vUV;
+varying float vLight;
+varying float vDist;
+void main(){
+  vec4 vp = vec4(aPos, 1.0);
+  gl_Position = uProj * uView * vp;
+  vUV = aUV;
+  vLight = aLight;
+  vDist = length(aPos - uEye);
+}`;
+const FS = `
+precision mediump float;
+varying vec2 vUV;
+varying float vLight;
+varying float vDist;
+uniform sampler2D uAtlas;
+uniform vec3 uFogColor;
+uniform float uFogNear, uFogFar;
+uniform float uAlphaTest;
+void main(){
+  vec4 tex = texture2D(uAtlas, vUV);
+  if (tex.a < uAlphaTest) discard;
+  vec3 col = tex.rgb * vLight;
+  float f = clamp((vDist - uFogNear) / (uFogFar - uFogNear), 0.0, 1.0);
+  col = mix(col, uFogColor, f);
+  gl_FragColor = vec4(col, tex.a);
+}`;
+function compile(type, src){
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VS));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+const A = {
+  pos: gl.getAttribLocation(prog, 'aPos'),
+  uv:  gl.getAttribLocation(prog, 'aUV'),
+  light: gl.getAttribLocation(prog, 'aLight'),
+};
+const U = {
+  proj: gl.getUniformLocation(prog, 'uProj'),
+  view: gl.getUniformLocation(prog, 'uView'),
+  eye:  gl.getUniformLocation(prog, 'uEye'),
+  atlas:gl.getUniformLocation(prog, 'uAtlas'),
+  fogColor: gl.getUniformLocation(prog, 'uFogColor'),
+  fogNear: gl.getUniformLocation(prog, 'uFogNear'),
+  fogFar:  gl.getUniformLocation(prog, 'uFogFar'),
+  alphaTest: gl.getUniformLocation(prog, 'uAlphaTest'),
+};
+
+// ---------- Matrix math ----------
+function mat4Identity(){ return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); }
+function mat4Perspective(fovy, aspect, near, far){
+  const f = 1/Math.tan(fovy/2), nf = 1/(near-far);
+  return new Float32Array([
+    f/aspect,0,0,0,
+    0,f,0,0,
+    0,0,(far+near)*nf,-1,
+    0,0,2*far*near*nf,0
+  ]);
+}
+function mat4LookAt(eye, cx, up){
+  let zx=eye[0]-cx[0], zy=eye[1]-cx[1], zz=eye[2]-cx[2];
+  let zl=Math.hypot(zx,zy,zz)||1; zx/=zl; zy/=zl; zz/=zl;
+  let xx=up[1]*zz-up[2]*zy, xy=up[2]*zx-up[0]*zz, xz=up[0]*zy-up[1]*zx;
+  let xl=Math.hypot(xx,xy,xz)||1; xx/=xl; xy/=xl; xz/=xl;
+  let yx=zy*xz-zz*xy, yy=zz*xx-zx*xz, yz=zx*xy-zy*xx;
+  return new Float32Array([
+    xx,yx,zx,0,
+    xy,yy,zy,0,
+    xz,yz,zz,0,
+    -(xx*eye[0]+xy*eye[1]+xz*eye[2]),
+    -(yx*eye[0]+yy*eye[1]+yz*eye[2]),
+    -(zx*eye[0]+zy*eye[1]+zz*eye[2]),1
+  ]);
+}
+
+// ---------- Noise (value noise + fbm) ----------
+function hash2(x, y){
+  let h = (x|0)*374761393 + (y|0)*668265263;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+function smooth(t){ return t*t*(3-2*t); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function valueNoise(x, y){
+  const xi=Math.floor(x), yi=Math.floor(y);
+  const xf=x-xi, yf=y-yi;
+  const tl=hash2(xi,yi), tr=hash2(xi+1,yi);
+  const bl=hash2(xi,yi+1), br=hash2(xi+1,yi+1);
+  const sx=smooth(xf), sy=smooth(yf);
+  return lerp(lerp(tl,tr,sx), lerp(bl,br,sx), sy);
+}
+function fbm(x, y){
+  let sum=0, amp=1, freq=1, max=0;
+  for(let i=0;i<4;i++){ sum+=amp*valueNoise(x*freq,y*freq); max+=amp; amp*=0.5; freq*=2; }
+  return sum/max;
+}
+
+// ---------- Texture atlas (procedural pixel art) ----------
+const TILE = 16, ATLAS_COLS = 4, ATLAS_SIZE = TILE*ATLAS_COLS;
+function makeAtlas(){
+  const c = document.createElement('canvas');
+  c.width = ATLAS_SIZE; c.height = ATLAS_SIZE;
+  const ctx = c.getContext('2d');
+  function px(tx, ty, x, y, color){ ctx.fillStyle = color; ctx.fillRect(tx*TILE+x, ty*TILE+y, 1, 1); }
+  function fillTile(tx, ty, color){ ctx.fillStyle = color; ctx.fillRect(tx*TILE, ty*TILE, TILE, TILE); }
+  function noiseTile(tx, ty, palette, seed){
+    for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){
+      const r = hash2(x*7+seed, y*13+seed);
+      const col = palette[Math.floor(r*palette.length)%palette.length];
+      px(tx,ty,x,y,col);
+    }
+  }
+  // 0 grass_top
+  noiseTile(0,0,["#5fae3a","#6cb83f","#54a033","#74c247","#4f9a30"], 11);
+  // 1 grass_side
+  noiseTile(1,0,["#7a5a3a","#6b4d30","#866239"], 22);
+  for(let x=0;x<TILE;x++){ const h=2+Math.floor(hash2(x,99)*3); for(let y=0;y<h;y++) px(1,0,x,y,["#5fae3a","#54a033","#6cb83f"][Math.floor(hash2(x,y+1)*3)]); }
+  // 2 dirt
+  noiseTile(2,0,["#7a5a3a","#6b4d30","#866239","#5e4628"], 33);
+  // 3 stone
+  noiseTile(3,0,["#8a8a8a","#7e7e7e","#949494","#767676"], 44);
+  // 4 log_top (rings)
+  (function(){ fillTile(0,1,"#9c7a4a"); const cx=8, cy=8;
+    for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){
+      const d=Math.hypot(x-cx,y-cy); let col="#9c7a4a";
+      if(d<2) col="#7a5a30"; else if(d<4) col="#a8854f"; else if(d<6) col="#8a6a3e"; else col=["#9c7a4a","#8a6a3e","#a8854f"][Math.floor(hash2(x,y)*3)];
+      px(0,1,x,y,col);
+    }
+  })();
+  // 5 log_side (bark)
+  noiseTile(1,1,["#6b4d2a","#7a5a30","#5e4628","#83603a"], 66);
+  for(let y=0;y<TILE;y+=4){ for(let x=0;x<TILE;x++){ if(hash2(x,y*3)>0.5) px(1,1,x,y,"#4f3a20"); } }
+  // 6 leaves
+  noiseTile(2,1,["#3a7d2a","#2f6a22","#469530","#357026"], 77);
+  for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){ if(hash2(x*3,y*5,7)>0.82) px(2,1,x,y,"rgba(0,0,0,0)"); }
+  // 7 sand
+  noiseTile(3,1,["#e6d9a0","#ded09a","#f0e3ad","#d8c98c"], 88);
+  // 8 planks
+  noiseTile(0,2,["#b08a4f","#a37f44","#bd9560","#9a7440"], 99);
+  for(let y=0;y<TILE;y++){ if(y%4===3) for(let x=0;x<TILE;x++) px(0,2,x,y,"#6b4d2a"); }
+  for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){ if(x%8===0) px(0,2,x,y, hash2(x,y)>0.5?"#7a5a30":"#8a6a3e"); }
+  // 9 brick
+  (function(){ fillTile(1,2,"#9b4a3a");
+    const mortar="#b8b0a8";
+    for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){
+      const row=Math.floor(y/4), off=row%2? 4:0;
+      const isMortar = (y%4===0) || (((x+off)%8)===0);
+      px(1,2,x,y, isMortar? mortar : (hash2(x,y)>0.5? "#a85648":"#9b4a3a"));
+    }
+  })();
+  // 10 cobblestone
+  (function(){ fillTile(2,2,"#6f6f6f");
+    const cells=[[2,2,5,5,"#8a8a8a"],[8,2,5,4,"#7a7a7a"],[2,7,4,5,"#949494"],[7,8,6,5,"#6e6e6e"],[12,3,3,8,"#828282"]];
+    for(const [cx,cy,cw,ch,col] of cells){
+      for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){ if(cx+x<TILE&&cy+y<TILE) px(2,2,cx+x,cy+y, hash2(cx+x,cy+y)>0.5? col: "#5f5f5f"); }
+    }
+    ctx.fillStyle="#3f3f3f";
+    for(let y=0;y<TILE;y+=1) for(let x=0;x<TILE;x+=1){ if(hash2(x*9,y*3,5)>0.9) px(2,2,x,y,"#3f3f3f"); }
+  })();
+  // 11 glass
+  (function(){ for(let y=0;y<TILE;y++) for(let x=0;x<TILE;x++){
+    const edge = (x===0||y===0||x===TILE-1||y===TILE-1);
+    px(3,2,x,y, edge? "rgba(200,230,255,0.9)":"rgba(220,240,255,0.25)");
+  } })();
+  // 12 water (semi-transparent)
+  noiseTile(0,3,["rgba(42,111,214,0.72)","rgba(41,102,196,0.72)","rgba(52,120,224,0.72)","rgba(37,90,190,0.72)"], 123);
+  // 13 bedrock
+  noiseTile(1,3,["#3a3a3a","#2a2a2a","#4a4a4a","#222222"], 200);
+  // empty tiles 2,3 row3 (unused)
+  return c;
+}
+const atlasCanvas = makeAtlas();
+const atlasTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.uniform1i(U.atlas, 0);
+
+// tile UV rect (with small inset to prevent bleeding)
+function tileUV(tileIndex){
+  const col = tileIndex % ATLAS_COLS, row = Math.floor(tileIndex / ATLAS_COLS);
+  const s = 1/ATLAS_COLS, inset = 0.001;
+  return [ (col+inset)*s, (row+inset)*s, (col+1-inset)*s, (row+1-inset)*s ];
+}
+
+// ---------- World storage ----------
+const world = new Uint8Array(WORLD_W * CHUNK_H * WORLD_D);
+function idx(x,y,z){ return (y*WORLD_D + z)*WORLD_W + x; }
+function getBlock(x,y,z){
+  if(x<0||x>=WORLD_W||y<0||y>=CHUNK_H||z<0||z>=WORLD_D) return AIR;
+  return world[idx(x,y,z)];
+}
+function setBlock(x,y,z,b){
+  if(x<0||x>=WORLD_W||y<0||y>=CHUNK_H||z<0||z>=WORLD_D) return;
+  world[idx(x,y,z)] = b;
+}
+
+// ---------- World generation ----------
+function generateWorld(){
+  for(let cx=0;cx<CHUNKS_X;cx++) for(let cz=0;cz<CHUNKS_Z;cz++){
+    for(let lx=0;lx<CHUNK_W;lx++) for(let lz=0;lz<CHUNK_D;lz++){
+      const x = cx*CHUNK_W+lx, z = cz*CHUNK_D+lz;
+      const base = SEA_LEVEL;
+      const n = fbm(x*0.045, z*0.045);          // 0..1
+      const n2 = fbm(x*0.012+100, z*0.012+100); // broad features
+      let h = Math.floor(base + (n-0.5)*18 + (n2-0.5)*10);
+      if(h<1) h=1; if(h>CHUNK_H-6) h=CHUNK_H-6;
+      for(let y=0;y<=h;y++){
+        let b;
+        if(y===0) b=BEDROCK;
+        else if(y===h){ b = h<=SEA_LEVEL? SAND : GRASS; }
+        else if(y>=h-3) b = h<=SEA_LEVEL? SAND : DIRT;
+        else b = STONE;
+        setBlock(x,y,z,b);
+      }
+      // water fill
+      if(h<SEA_LEVEL){ for(let y=h+1;y<=SEA_LEVEL;y++) setBlock(x,y,z,WATER); }
+      // trees on grass above sea level
+      if(h>SEA_LEVEL && h<CHUNK_H-8 && hash2(x*131+7, z*257+13) > 0.985){
+        plantTree(x, h+1, z);
+      }
+    }
+  }
+}
+function plantTree(x, y, z){
+  const th = 4 + Math.floor(hash2(x,z)*3);
+  for(let i=0;i<th;i++) setBlock(x, y+i, z, WOOD);
+  const top = y+th;
+  for(let dy=-1;dy<=1;dy++) for(let dx=-2;dx<=2;dx++) for(let dz=-2;dz<=2;dz++){
+    if(dx===0&&dz===0&&dy<1) continue;
+    const dist = Math.abs(dx)+Math.abs(dz)+Math.abs(dy);
+    if(dist>3) continue;
+    if(dist===3 && hash2(x+dx,z+dz+dy)>0.5) continue;
+    const bx=x+dx, by=top+dy, bz=z+dz;
+    if(getBlock(bx,by,bz)===AIR) setBlock(bx,by,bz,LEAVES);
+  }
+  setBlock(x, top+1, z, LEAVES);
+}
+
+// ---------- Chunk meshing ----------
+const FACES = [
+  // +X
+  { n:[1,0,0],  v:[[1,0,0],[1,1,0],[1,1,1],[1,0,1]], light:0.62 },
+  // -X
+  { n:[-1,0,0], v:[[0,0,1],[0,1,1],[0,1,0],[0,0,0]], light:0.62 },
+  // +Y (top)
+  { n:[0,1,0],  v:[[0,1,1],[1,1,1],[1,1,0],[0,1,0]], light:1.00 },
+  // -Y (bottom)
+  { n:[0,-1,0], v:[[0,0,0],[1,0,0],[1,0,1],[0,0,1]], light:0.5 },
+  // +Z
+  { n:[0,0,1],  v:[[1,0,1],[1,1,1],[0,1,1],[0,0,1]], light:0.80 },
+  // -Z
+  { n:[0,0,-1], v:[[0,0,0],[0,1,0],[1,1,0],[1,0,0]], light:0.80 },
+];
+// face index: 0=+X(side),1=-X(side),2=top,3=bottom,4=+Z(side),5=-Z(side)
+function faceTile(block, faceIndex){
+  const t = BLOCK_TILES[block];
+  if(!t) return 3;
+  if(faceIndex===2) return t[0];      // top
+  if(faceIndex===3) return t[2];      // bottom
+  return t[1];                        // side
+}
+
+const chunkMeshes = []; // index = cz*CHUNKS_X + cx ; each {opaque:{vbo,ibo,count}, trans:{...}}
+function chunkIndex(cx,cz){ return cz*CHUNKS_X+cx; }
+
+function buildChunk(cx, cz){
+  const opaqueVerts = [], opaqueIdx = [];
+  const transVerts = [], transIdx = [];
+  const baseX = cx*CHUNK_W, baseZ = cz*CHUNK_D;
+  let ov = 0, tv = 0;
+  for(let ly=0; ly<CHUNK_H; ly++)
+  for(let lz=0; lz<CHUNK_D; lz++)
+  for(let lx=0; lx<CHUNK_W; lx++){
+    const x=baseX+lx, y=ly, z=baseZ+lz;
+    const b = getBlock(x,y,z);
+    if(b===AIR) continue;
+    const liquid = IS_LIQUID(b);
+    for(let f=0; f<6; f++){
+      const dir = FACES[f].n;
+      const nb = getBlock(x+dir[0], y+dir[1], z+dir[2]);
+      // determine if face is visible
+      let visible;
+      if(liquid){
+        // water faces visible if neighbor is air (top) or non-water non-solid... show against air only
+        visible = (nb===AIR);
+      } else {
+        visible = IS_TRANSPARENT(nb) && nb !== b;
+        // glass next to glass: hide; leaves next to leaves: hide
+      }
+      if(!visible) continue;
+      const isTrans = (b===WATER || b===GLASS);
+      const verts = isTrans ? transVerts : opaqueVerts;
+      const idxArr = isTrans ? transIdx : opaqueIdx;
+      const base = isTrans ? tv : ov;
+      const tile = faceTile(b, f);
+      const [u0,v0,u1,v1] = tileUV(tile);
+      const light = FACES[f].light;
+      const corners = FACES[f].v;
+      // UVs per corner (0,0)(1,0)(1,1)(0,1) -> map to tile rect
+      const uvCorners = [[u0,v1],[u0,v0],[u1,v0],[u1,v1]];
+      for(let i=0;i<4;i++){
+        const c = corners[i];
+        verts.push(x+c[0], y+c[1], z+c[2], uvCorners[i][0], uvCorners[i][1], light);
+      }
+      idxArr.push(base, base+1, base+2, base, base+2, base+3);
+      if(isTrans) tv+=4; else ov+=4;
+    }
+  }
+  // build GL buffers
+  const ci = chunkIndex(cx,cz);
+  let mesh = chunkMeshes[ci];
+  if(!mesh){ mesh = {opaque:null, trans:null}; chunkMeshes[ci]=mesh; }
+  // dispose old
+  if(mesh.opaque){ gl.deleteBuffer(mesh.opaque.vbo); gl.deleteBuffer(mesh.opaque.ibo); }
+  if(mesh.trans){ gl.deleteBuffer(mesh.trans.vbo); gl.deleteBuffer(mesh.trans.ibo); }
+  mesh.opaque = makeMesh(opaqueVerts, opaqueIdx);
+  mesh.trans  = makeMesh(transVerts, transIdx);
+}
+function makeMesh(verts, idx){
+  if(verts.length===0) return null;
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+  const ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  const indexType = INDEX_UINT ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+  const idxBuf = INDEX_UINT ? new Uint32Array(idx) : new Uint16Array(idx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idxBuf, gl.STATIC_DRAW);
+  return { vbo, ibo, count: idx.length, indexType };
+}
+function buildAllChunks(){
+  for(let cz=0;cz<CHUNKS_Z;cz++) for(let cx=0;cx<CHUNKS_X;cx++) buildChunk(cx,cz);
+}
+function remeshAround(x,y,z){
+  const cx=Math.floor(x/CHUNK_W), cz=Math.floor(z/CHUNK_D);
+  buildChunk(cx,cz);
+  const lx = x - cx*CHUNK_W, lz = z - cz*CHUNK_D;
+  if(lx===0 && cx>0) buildChunk(cx-1, cz);
+  if(lx===CHUNK_W-1 && cx<CHUNKS_X-1) buildChunk(cx+1, cz);
+  if(lz===0 && cz>0) buildChunk(cx, cz-1);
+  if(lz===CHUNK_D-1 && cz<CHUNKS_Z-1) buildChunk(cx, cz+1);
+}
+
+// ---------- Player ----------
+const player = {
+  x: WORLD_W/2, y: CHUNK_H-1, z: WORLD_D/2,
+  vx:0, vy:0, vz:0,
+  yaw: 0, pitch: 0,
+  onGround: false,
+  flying: false,
+};
+
+function spawnPlayer(){
+  // find a grass/sand column near center
+  const x=Math.floor(WORLD_W/2), z=Math.floor(WORLD_D/2);
+  for(let y=CHUNK_H-1;y>0;y--){
+    const b=getBlock(x,y,z);
+    if(IS_SOLID(b)){ player.x=x+0.5; player.y=y+1+PLAYER_EYE; player.z=z+0.5; player.vy=0; return; }
+  }
+  player.x=x+0.5; player.y=SEA_LEVEL+3; player.z=z+0.5;
+}
+
+// ---------- Input ----------
+const keys = {};
+let mouseLocked = false;
+document.addEventListener('keydown', e=>{
+  keys[e.code]=true;
+  if(e.code==='KeyF'){ player.flying=!player.flying; player.vy=0; }
+  if(e.code.startsWith('Digit')){
+    const n=parseInt(e.code.slice(5)); if(n>=1&&n<=HOTBAR.length){ selectedSlot=n-1; updateHotbarUI(); }
+  }
+});
+document.addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+canvas.addEventListener('click', ()=>{
+  if(!mouseLocked) canvas.requestPointerLock();
+});
+document.getElementById('overlay').addEventListener('click', ()=>{
+  canvas.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', ()=>{
+  mouseLocked = (document.pointerLockElement===canvas);
+  document.getElementById('overlay').classList.toggle('hidden', mouseLocked);
+});
+document.addEventListener('mousemove', e=>{
+  if(!mouseLocked) return;
+  const s=0.0022;
+  player.yaw -= e.movementX*s;
+  player.pitch -= e.movementY*s;
+  const lim=Math.PI/2-0.01;
+  if(player.pitch>lim) player.pitch=lim;
+  if(player.pitch<-lim) player.pitch=-lim;
+});
+document.addEventListener('mousedown', e=>{
+  if(!mouseLocked) return;
+  if(e.button===0) breakBlock();
+  else if(e.button===2) placeBlock();
+});
+document.addEventListener('contextmenu', e=> e.preventDefault());
+window.addEventListener('wheel', e=>{
+  if(!mouseLocked) return;
+  if(e.deltaY>0) selectedSlot=(selectedSlot+1)%HOTBAR.length;
+  else selectedSlot=(selectedSlot-1+HOTBAR.length)%HOTBAR.length;
+  updateHotbarUI();
+});
+
+// ---------- Raycast (voxel DDA) ----------
+function raycast(maxDist){
+  const dir = camForward();
+  let ox=player.x, oy=player.y, pz=player.z;
+  let x=Math.floor(ox), y=Math.floor(oy), z=Math.floor(pz);
+  const stepX=Math.sign(dir[0])||1, stepY=Math.sign(dir[1])||1, stepZ=Math.sign(dir[2])||1;
+  const tDeltaX = dir[0]!==0? Math.abs(1/dir[0]) : Infinity;
+  const tDeltaY = dir[1]!==0? Math.abs(1/dir[1]) : Infinity;
+  const tDeltaZ = dir[2]!==0? Math.abs(1/dir[2]) : Infinity;
+  let tMaxX = dir[0]>0? (x+1-ox)/dir[0] : (dir[0]<0? (ox-x)/-dir[0] : Infinity);
+  let tMaxY = dir[1]>0? (y+1-oy)/dir[1] : (dir[1]<0? (oy-y)/-dir[1] : Infinity);
+  let tMaxZ = dir[2]>0? (z+1-pz)/dir[2] : (dir[2]<0? (pz-z)/-dir[2] : Infinity);
+  let face=null, t=0;
+  for(let i=0;i<80;i++){
+    const b=getBlock(x,y,z);
+    if(b!==AIR && b!==WATER){ return {x,y,z, face, block:b}; }
+    if(tMaxX<tMaxY && tMaxX<tMaxZ){ x+=stepX; t=tMaxX; tMaxX+=tDeltaX; face=[-stepX,0,0]; }
+    else if(tMaxY<tMaxZ){ y+=stepY; t=tMaxY; tMaxY+=tDeltaY; face=[0,-stepY,0]; }
+    else { z+=stepZ; t=tMaxZ; tMaxZ+=tDeltaZ; face=[0,0,-stepZ]; }
+    if(t>maxDist) break;
+  }
+  return null;
+}
+function camForward(){
+  const cp=Math.cos(player.pitch), sp=Math.sin(player.pitch);
+  const cy=Math.cos(player.yaw), sy=Math.sin(player.yaw);
+  // forward direction camera looks (OpenGL -Z forward)
+  return [-cp*sy, sp, -cp*cy];
+}
+
+function breakBlock(){
+  const hit=raycast(6); if(!hit) return;
+  if(hit.block===BEDROCK) return;
+  setBlock(hit.x,hit.y,hit.z,AIR);
+  remeshAround(hit.x,hit.y,hit.z);
+}
+function placeBlock(){
+  const hit=raycast(6); if(!hit||!hit.face) return;
+  const nx=hit.x+hit.face[0], ny=hit.y+hit.face[1], nz=hit.z+hit.face[2];
+  if(ny<0||ny>=CHUNK_H) return;
+  if(getBlock(nx,ny,nz)!==AIR && getBlock(nx,ny,nz)!==WATER) return;
+  // don't place inside player
+  const minX=player.x-PLAYER_RADIUS, maxX=player.x+PLAYER_RADIUS;
+  const minZ=player.z-PLAYER_RADIUS, maxZ=player.z+PLAYER_RADIUS;
+  const minY=player.y-PLAYER_EYE, maxY=player.y-PLAYER_EYE+PLAYER_HEIGHT;
+  if(nx+1>minX && nx<maxX && nz+1>minZ && nz<maxZ && ny+1>minY && ny<maxY) return;
+  setBlock(nx,ny,nz,HOTBAR[selectedSlot]);
+  remeshAround(nx,ny,nz);
+}
+
+// ---------- Collision ----------
+function collides(px, py, pz){
+  const minX=Math.floor(px-PLAYER_RADIUS), maxX=Math.floor(px+PLAYER_RADIUS);
+  const minY=Math.floor(py-PLAYER_EYE), maxY=Math.floor(py-PLAYER_EYE+PLAYER_HEIGHT);
+  const minZ=Math.floor(pz-PLAYER_RADIUS), maxZ=Math.floor(pz+PLAYER_RADIUS);
+  for(let y=minY;y<=maxY;y++) for(let x=minX;x<=maxX;x++) for(let z=minZ;z<=maxZ;z++){
+    if(IS_SOLID(getBlock(x,y,z))) return true;
+  }
+  return false;
+}
+function inLiquid(){
+  const x=Math.floor(player.x), y=Math.floor(player.y-PLAYER_EYE+0.5), z=Math.floor(player.z);
+  return getBlock(x,y,z)===WATER;
+}
+
+// ---------- Update ----------
+function update(dt){
+  // movement input
+  // horizontal forward (zero out y)
+  let fx=-Math.sin(player.yaw), fz=-Math.cos(player.yaw);
+  let rx=Math.cos(player.yaw), rz=-Math.sin(player.yaw);
+  // right vector = (cos yaw, 0, -sin yaw)? compute properly:
+  // forward (yaw): fx=-sin(yaw), fz=-cos(yaw). right = (fz, 0, -fx)?? let's use:
+  rx = -fz; rz = fx; // perpendicular in XZ
+  let ix=0, iz=0;
+  if(keys['KeyW']){ ix+=fx; iz+=fz; }
+  if(keys['KeyS']){ ix-=fx; iz-=fz; }
+  if(keys['KeyA']){ ix-=rx; iz-=rz; }
+  if(keys['KeyD']){ ix+=rx; iz+=rz; }
+  const il=Math.hypot(ix,iz);
+  if(il>0){ ix/=il; iz/=il; }
+  const sprint = keys['ShiftLeft']||keys['ShiftRight'];
+  const speed = player.flying? FLY_SPEED : (sprint? SPRINT_SPEED : WALK_SPEED);
+
+  if(player.flying){
+    player.vx = ix*speed; player.vz = iz*speed;
+    let vy=0;
+    if(keys['Space']) vy+=1; if(keys['ShiftLeft']||keys['ShiftRight']) vy-=1;
+    player.vy = vy*speed;
+  } else {
+    player.vx = ix*speed; player.vz = iz*speed;
+    const liquid = inLiquid();
+    if(keys['Space'] && (player.onGround || liquid)){
+      player.vy = liquid? 5 : JUMP_SPEED;
+      player.onGround=false;
+    }
+    player.vy -= GRAVITY*dt;
+    if(liquid){ player.vy = Math.max(player.vy, -3); } // buoyancy/slow sink
+    // water drag on horizontal
+    if(liquid){ player.vx*=0.6; player.vz*=0.6; }
+  }
+
+  // move axis by axis with collision
+  let nx = player.x + player.vx*dt;
+  if(!collides(nx, player.y, player.z)) player.x=nx; else player.vx=0;
+  let nz = player.z + player.vz*dt;
+  if(!collides(player.x, player.y, nz)) player.z=nz; else player.vz=0;
+  let ny = player.y + player.vy*dt;
+  if(!collides(player.x, ny, player.z)){
+    player.y=ny; player.onGround=false;
+  } else {
+    if(player.vy<0) player.onGround=true;
+    player.vy=0;
+  }
+  // keep inside world
+  if(player.x<1)player.x=1; if(player.x>WORLD_W-1)player.x=WORLD_W-1;
+  if(player.z<1)player.z=1; if(player.z>WORLD_D-1)player.z=WORLD_D-1;
+  if(player.y< -10){ spawnPlayer(); player.flying=false; }
+}
+
+// ---------- Render ----------
+const SKY = [0.62, 0.82, 0.96];
+function render(){
+  gl.clearColor(SKY[0], SKY[1], SKY[2], 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const aspect = canvas.width/canvas.height;
+  const proj = mat4Perspective(70*Math.PI/180, aspect, 0.05, 1000);
+  const eye = [player.x, player.y, player.z];
+  const fwd = camForward();
+  const center = [eye[0]+fwd[0], eye[1]+fwd[1], eye[2]+fwd[2]];
+  const view = mat4LookAt(eye, center, [0,1,0]);
+
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(U.proj, false, proj);
+  gl.uniformMatrix4fv(U.view, false, view);
+  gl.uniform3fv(U.eye, eye);
+  gl.uniform3fv(U.fogColor, SKY);
+  gl.uniform1f(U.fogNear, 40);
+  gl.uniform1f(U.fogFar, 130);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.cullFace(gl.BACK);
+
+  // Opaque pass (alpha test for leaves)
+  gl.disable(gl.BLEND);
+  gl.uniform1f(U.alphaTest, 0.4);
+  for(const mesh of chunkMeshes){
+    if(mesh && mesh.opaque) drawMesh(mesh.opaque);
+  }
+  // Transparent pass (water/glass)
+  gl.uniform1f(U.alphaTest, 0.05);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false);
+  for(const mesh of chunkMeshes){
+    if(mesh && mesh.trans) drawMesh(mesh.trans);
+  }
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+
+  drawHighlight();
+}
+function drawMesh(mesh){
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+  const stride = 6*4;
+  gl.enableVertexAttribArray(A.pos);  gl.vertexAttribPointer(A.pos, 3, gl.FLOAT, false, stride, 0);
+  gl.enableVertexAttribArray(A.uv);   gl.vertexAttribPointer(A.uv, 2, gl.FLOAT, false, stride, 12);
+  gl.enableVertexAttribArray(A.light);gl.vertexAttribPointer(A.light,1, gl.FLOAT, false, stride, 20);
+  gl.drawElements(gl.TRIANGLES, mesh.count, mesh.indexType, 0);
+}
+
+// Block highlight outline
+let hlVBO=null, hlIBO=null, hlCount=0;
+function buildHighlight(){
+  const v=[], idx=[];
+  const s=0.002;
+  const c=[[0,0,0],[1,0,0],[1,1,0],[0,1,0],[0,0,1],[1,0,1],[1,1,1],[0,1,1]];
+  const edges=[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+  for(const e of edges){ v.push(c[e[0]][0],c[e[0]][1],c[e[0]][2], c[e[1]][0],c[e[1]][1],c[e[1]][2]); idx.push(v.length/3-2, v.length/3-1); }
+  hlVBO=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, hlVBO); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+  hlIBO=gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hlIBO); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  hlCount=idx.length;
+}
+buildHighlight();
+function drawHighlight(){
+  const hit=raycast(6); if(!hit) return;
+  const prog2=hlProg;
+  gl.useProgram(prog2);
+  const aspect=canvas.width/canvas.height;
+  const proj=mat4Perspective(70*Math.PI/180, aspect, 0.05, 1000);
+  const eye=[player.x,player.y,player.z]; const fwd=camForward();
+  const center=[eye[0]+fwd[0],eye[1]+fwd[1],eye[2]+fwd[2]];
+  const view=mat4LookAt(eye,center,[0,1,0]);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog2,'uMVP'), false, mulMat4(proj,view));
+  // model translate
+  const mvp = translateMVP(proj, view, hit.x, hit.y, hit.z);
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog2,'uMVP'), false, mvp);
+  gl.bindBuffer(gl.ARRAY_BUFFER, hlVBO);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, hlIBO);
+  gl.enableVertexAttribArray(gl.getAttribLocation(prog2,'aPos'));
+  gl.vertexAttribPointer(gl.getAttribLocation(prog2,'aPos'),3,gl.FLOAT,false,12,0);
+  gl.disable(gl.DEPTH_TEST);
+  gl.lineWidth(2);
+  gl.drawElements(gl.LINES, hlCount, gl.UNSIGNED_SHORT, 0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.useProgram(prog);
+}
+function mulMat4(a,b){ const o=new Float32Array(16); for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;} return o; }
+function translateMVP(proj, view, tx,ty,tz){
+  // MVP = proj * view * T ; build combined by injecting translation into view
+  const v = new Float32Array(view);
+  v[12] += tx*v[0]+ty*v[4]+tz*v[8];
+  v[13] += tx*v[1]+ty*v[5]+tz*v[9];
+  v[14] += tx*v[2]+ty*v[6]+tz*v[10];
+  return mulMat4(proj, v);
+}
+// highlight shader
+const hlVS=`attribute vec3 aPos; uniform mat4 uMVP; void main(){ gl_Position = uMVP * vec4(aPos,1.0); }`;
+const hlFS=`precision mediump float; void main(){ gl_FragColor = vec4(0.0,0.0,0.0,0.5); }`;
+const hlProg=gl.createProgram();
+gl.attachShader(hlProg, compile(gl.VERTEX_SHADER, hlVS));
+gl.attachShader(hlProg, compile(gl.FRAGMENT_SHADER, hlFS));
+gl.linkProgram(hlProg);
+
+// ---------- Hotbar UI ----------
+function updateHotbarUI(){
+  const bar=document.getElementById('hotbar');
+  bar.innerHTML='';
+  HOTBAR.forEach((b,i)=>{
+    const slot=document.createElement('div');
+    slot.className='slot'+(i===selectedSlot?' active':'');
+    const num=document.createElement('div'); num.className='num'; num.innerText=(i+1); slot.appendChild(num);
+    // draw block icon from atlas tile
+    const cv=document.createElement('canvas'); cv.width=16; cv.height=16;
+    const ctx=cv.getContext('2d');
+    const tile=BLOCK_TILES[b][1]; // side tile
+    const col=tile%ATLAS_COLS, row=Math.floor(tile/ATLAS_COLS);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(atlasCanvas, col*TILE, row*TILE, TILE, TILE, 0,0,16,16);
+    // darken bottom for fake 3d
+    ctx.fillStyle='rgba(0,0,0,0.18)'; ctx.fillRect(0,12,16,4);
+    slot.appendChild(cv);
+    bar.appendChild(slot);
+  });
+}
+
+// ---------- HUD ----------
+let fpsT=performance.now(), fpsC=0, fps=0;
+function updateHUD(){
+  fpsC++;
+  const now=performance.now();
+  if(now-fpsT>500){ fps=Math.round(fpsC*1000/(now-fpsT)); fpsC=0; fpsT=now; }
+  const hit=raycast(6);
+  document.getElementById('hud').innerText =
+    `FPS: ${fps}\n`+
+    `XYZ: ${player.x.toFixed(1)} ${player.y.toFixed(1)} ${player.z.toFixed(1)}\n`+
+    `Block: ${hit? hit.x+','+hit.y+','+hit.z : '—'}\n`+
+    `Mode: ${player.flying?'FLY':'WALK'}   Selected: ${['Grass','Dirt','Stone','Wood','Planks','Cobble','Sand','Brick','Leaves'][selectedSlot]}`;
+}
+
+// ---------- Main loop ----------
+let last=performance.now();
+function loop(){
+  const now=performance.now();
+  let dt=(now-last)/1000; last=now;
+  if(dt>0.1) dt=0.1;
+  if(mouseLocked) update(dt);
+  render();
+  updateHUD();
+  requestAnimationFrame(loop);
+}
+
+// ---------- Boot (deferred so the "Generating world…" screen paints first) ----------
+setTimeout(()=>{
+  generateWorld();
+  buildAllChunks();
+  spawnPlayer();
+  updateHotbarUI();
+  document.getElementById('loading').classList.add('hidden');
+  document.getElementById('overlay').classList.remove('hidden');
+  last = performance.now();
+  loop();
+}, 30);
+</script>
+</body>
+</html>

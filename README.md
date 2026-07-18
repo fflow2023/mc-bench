@@ -3,5 +3,5 @@
 ## Prompt
 
 ```
-Make a Minecraft game. Output only one self-contained HTML file with no external dependencies.
+Make a 3d Minecraft game. Output only a single HTML file.
 ```
