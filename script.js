@@ -13,11 +13,7 @@ document.addEventListener("DOMContentLoaded", () => {
     promptEl.textContent = mcBenchConfig.prompt;
   }
 
-  const sorted = [...mcBenchConfig.entries].sort(
-    (a, b) => new Date(b.date) - new Date(a.date)
-  );
-
-  sorted.forEach((entry, index) => {
+  mcBenchConfig.entries.forEach((entry, index) => {
     const card = document.createElement("a");
     card.className = "entry-card";
     card.href = entry.path + "index.html";

@@ -4,4 +4,7 @@ Thumbs.db
 node_modules/
 .vscode/
 .idea/
-games/未达到可用线/
+.serena/
+AGENTS.md
+games/.old/
+.playwright-cli/
