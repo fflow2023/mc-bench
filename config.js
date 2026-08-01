@@ -14,6 +14,24 @@ const mcBenchConfig = {
       path: "games/chatgpt-5.6-ultra/",
     },
     {
+      agent: "Claude",
+      model: "Opus 4.8",
+      date: "2026-08-01",
+      path: "games/claude-opus-4.8/",
+    },
+    {
+      agent: "GLM",
+      model: "5.2",
+      date: "2026-07-18",
+      path: "games/glm-5.2/",
+    },
+    {
+      agent: "DeepSeek",
+      model: "V4 Flash",
+      date: "2026-08-01",
+      path: "games/deepseek-v4-flash/",
+    },
+    {
       agent: "DeepSeek",
       model: "V4 Pro",
       date: "2026-07-18",
@@ -30,18 +48,6 @@ const mcBenchConfig = {
       model: "3.6 Flash",
       date: "2026-07-27",
       path: "games/gemini-3.6-flash/",
-    },
-    {
-      agent: "Claude",
-      model: "Opus 4.6",
-      date: "2026-07-27",
-      path: "games/claude-opus-4.6/",
-    },
-    {
-      agent: "GLM",
-      model: "5.2",
-      date: "2026-07-18",
-      path: "games/glm-5.2/",
     },
     {
       agent: "MiniMax",
